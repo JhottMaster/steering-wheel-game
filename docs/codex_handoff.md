@@ -213,6 +213,14 @@ docs/xiao_bno055_bringup.md
 firmware/xiao_bno055_smoketest/xiao_bno055_smoketest.ino
 ```
 
+There is also now a very small cross-platform game/input proof of concept in the repo:
+
+```text
+controller_poc/
+docs/udp_raylib_poc.md
+firmware/xiao_bno055_udp_sender/xiao_bno055_udp_sender.ino
+```
+
 Current test wiring:
 
 ```text
@@ -230,19 +238,50 @@ Do not block on battery selection before the first real electronics prototype.
 Expose the XIAO USB-C port in the CAD revision.
 ```
 
+Additional bring-up notes:
+
+```text
+The XIAO ESP32-C3 does not expose a normal programmable onboard user LED.
+The tiny red onboard light appears to be a power LED, not a general status LED to build around.
+The smoke-test sketch includes a short quiet startup delay after reset to make reprogramming smoother.
+```
+
+## Validated Wi-Fi POC Status
+
+As of `2026-05-31`, the Wi-Fi POC is also working end-to-end:
+
+```text
+XIAO ESP32-C3 reads orientation from BNO055
+XIAO sends UDP packets over Wi-Fi
+Raylib desktop app receives packets and displays a steering bar
+Windows 11 test machine verified
+```
+
+Important practical notes from the working setup:
+
+```text
+The external XIAO antenna must be attached or Wi-Fi signal can be unusably weak.
+The firmware uses a local untracked wifi_secrets.h file plus a tracked wifi_secrets.example.h template.
+The XIAO now advertises a friendlier hostname: steering-wheel-poc-esp32c3
+The Raylib app can display the host IPv4 address to make host IP setup easier.
+The Windows app can receive local UDP test packets from PowerShell.
+To get real XIAO-to-PC traffic working, both Windows firewall and router/VLAN UDP rules mattered.
+```
+
 ## Likely Next Steps
 
 1. Keep the current `XIAO + BNO055` wiring intact while it is known-good.
-2. Write the next firmware step: convert orientation data into a simple steering value over USB serial.
-3. Decide the first game-input path:
-   - USB serial into a Raspberry Pi app or browser visualizer
-   - BLE later if untethered play is still desirable
+2. Refine the signal the game uses:
+   - derive a more intentional steering value from roll/pitch
+   - add better centering / calibration behavior
+   - decide whether heading should be ignored for gameplay
+3. Decide whether the first real game path stays on Wi-Fi UDP or also needs a wired USB fallback.
 4. Revise the CAD around the real prototype electronics:
    - deeper hub cavity
    - XIAO and BNO055 placement
    - USB-C access slot
    - likely rear cover strategy
-5. After the wired prototype works, revisit battery, charger, switch, and mounting hardware choices.
+5. After the wired or Wi-Fi prototype works, revisit battery, charger, switch, and mounting hardware choices.
 
 ## Style Preference For Future CAD
 

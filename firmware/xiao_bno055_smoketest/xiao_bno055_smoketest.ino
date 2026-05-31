@@ -9,6 +9,7 @@ constexpr int kSclPin = D5;
 constexpr uint32_t kBaudRate = 115200;
 constexpr uint32_t kI2cClockHz = 100000;
 constexpr uint32_t kPrintIntervalMs = 200;
+constexpr uint32_t kStartupQuietMs = 4000;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 uint32_t lastPrintMs = 0;
@@ -33,10 +34,17 @@ void printCalibration() {
 
 void setup() {
   Serial.begin(kBaudRate);
-  delay(1500);
+  const uint32_t bootStartMs = millis();
+  while (!Serial && (millis() - bootStartMs) < 1500) {
+    delay(10);
+  }
 
   Serial.println();
   Serial.println("XIAO ESP32-C3 + BNO055 smoke test");
+  Serial.print("Quiet startup window: ");
+  Serial.print(kStartupQuietMs);
+  Serial.println(" ms");
+  delay(kStartupQuietMs);
   Serial.println("Starting I2C...");
 
   Wire.begin(kSdaPin, kSclPin);

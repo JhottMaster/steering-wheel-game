@@ -63,6 +63,7 @@ The sketch lives here:
 What it does:
 
 - starts USB serial
+- waits briefly after reset so repeated reprogramming is less annoying
 - starts `I2C` on `D4` and `D5`
 - slows the bus to `100 kHz`
 - attempts to initialize the BNO055
@@ -94,6 +95,21 @@ If it is unstable:
 - power-cycle both boards
 - try adding stronger `I2C` pullups later
 - fall back to the `LIS3DH` or a different IMU if necessary
+
+## QoL Notes
+
+- The XIAO ESP32-C3 does not have a normal programmable onboard user LED. The tiny red LED visible on the board is effectively just a power indicator.
+- The smoke-test sketch now includes a short quiet startup window after reset so the serial port is easier to reconnect to while iterating.
+
+## Controller Direction
+
+For the next prototype step, the fastest path into a `raylib` C++ game is:
+
+1. keep using `USB-C`
+2. send a compact steering value over `USB serial`
+3. read that serial stream from the desktop or Raspberry Pi app
+
+This is simpler than trying to start with `BLE HID` or a full USB gamepad emulation path.
 
 ## If This Passes
 
