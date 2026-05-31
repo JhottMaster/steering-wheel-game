@@ -11,7 +11,7 @@ CadQuery is the source of truth for the CAD model. The model should stay paramet
 Local project folder:
 
 ```text
-/Users/pabloaizpiri/dev/cad/toddler-steering-wheel
+C:\Users\Pablo\Desktop\Projects\3D Printing\Toddler Steering Wheel\steering-wheel-game
 ```
 
 GitHub repo:
@@ -128,7 +128,7 @@ pocket_height = 48.0 mm
 pocket_footprint_inset_depth = 1.2 mm
 ```
 
-The pocket size was a rough guess for a small ESP32/Arduino Nano-style board plus an IMU breakout. It is not yet based on a chosen board.
+The pocket size was a rough guess for a small ESP32/Arduino Nano-style board plus an IMU breakout. It is not yet based on a chosen board, but the first print confirmed that a real electronics cavity can likely fit a `XIAO ESP32-C3` and `BNO055` side by side if the current shallow hub area is made deeper.
 
 ## Printing Notes
 
@@ -155,14 +155,33 @@ The current shallow inset should not create the same support problem as the deep
 Likely components:
 
 ```text
-ESP32 or similar microcontroller
-separate IMU/gyro module unless the chosen board has one built in
+Seeed Studio XIAO ESP32-C3
+Adafruit BNO055 absolute orientation sensor
 battery/power source still undecided
 cover plate screwed into the hub
 heat-set brass inserts for screws
 ```
 
-Most plain ESP32 dev boards do not include a gyro/IMU. Some specialty boards do. Candidate IMU modules include MPU-6050, MPU-9250, ICM-20948, LSM6DS3, BMI270, or similar.
+Other parts found in the parts bin during hardware inventory:
+
+```text
+generic ESP32 board
+Adafruit ItsyBitsy 48 MHz 3.3V
+Adafruit Bluetooth Feather
+Arduino Micro
+Meadow board
+Adafruit LIS3DH 3-axis accelerometer
+LC Studio MMA7361-style 3-axis accelerometer board
+```
+
+Reasoning behind the current preferred stack:
+
+```text
+XIAO ESP32-C3 is very small and has USB-C for simple first-prototype power and programming.
+BNO055 includes fused orientation and is the strongest sensor found so far for steering input.
+LIS3DH and MMA7361 are usable fallbacks for rough tilt input but are accelerometer-only.
+Arduino Micro remains a possible wired USB HID option later if pretending to be a keyboard/gamepad becomes the simplest Raspberry Pi integration path.
+```
 
 For the final electronics version, consider:
 
@@ -174,21 +193,56 @@ secure cover screws
 no exposed coin cells or loose small parts for toddler use
 ```
 
+## Validated Bring-Up Status
+
+As of `2026-05-31`, the following combination has been tested successfully over `USB-C`:
+
+```text
+Seeed Studio XIAO ESP32-C3
+Adafruit BNO055
+I2C connection
+USB serial output from a simple Arduino sketch
+```
+
+This de-risks the most important early electronics question: the current preferred controller and sensor stack works well enough to proceed with a real prototype.
+
+The successful smoke-test sketch and setup notes are now in the repo:
+
+```text
+docs/xiao_bno055_bringup.md
+firmware/xiao_bno055_smoketest/xiao_bno055_smoketest.ino
+```
+
+Current test wiring:
+
+```text
+XIAO 3V3 -> BNO055 VIN
+XIAO GND -> BNO055 GND
+XIAO D4/SDA -> BNO055 SDA
+XIAO D5/SCL -> BNO055 SCL
+```
+
+Current first-prototype power strategy:
+
+```text
+Use USB-C to power and program the XIAO.
+Do not block on battery selection before the first real electronics prototype.
+Expose the XIAO USB-C port in the CAD revision.
+```
+
 ## Likely Next Steps
 
-1. Print the current STL as a physical hand-feel prototype.
-2. While it prints, inventory available electronics: ESP32 board model, IMU model, battery options, switches, charger boards, LEDs/buttons/displays.
-3. Pick the communication approach:
-   - BLE HID/gamepad if pretending to be a controller.
-   - BLE UART or Wi-Fi/WebSocket if talking to a custom browser game.
-4. Prototype firmware that reads IMU steering angle.
-5. Prototype a tiny browser game or visualizer that displays steering input.
-6. Once electronics are chosen, revise the CAD:
-   - real rear pocket or two-piece cover
-   - board standoffs
-   - heat-set insert holes
-   - switch/charging access
-   - cable/programming access if needed
+1. Keep the current `XIAO + BNO055` wiring intact while it is known-good.
+2. Write the next firmware step: convert orientation data into a simple steering value over USB serial.
+3. Decide the first game-input path:
+   - USB serial into a Raspberry Pi app or browser visualizer
+   - BLE later if untethered play is still desirable
+4. Revise the CAD around the real prototype electronics:
+   - deeper hub cavity
+   - XIAO and BNO055 placement
+   - USB-C access slot
+   - likely rear cover strategy
+5. After the wired prototype works, revisit battery, charger, switch, and mounting hardware choices.
 
 ## Style Preference For Future CAD
 
