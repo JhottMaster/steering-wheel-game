@@ -35,47 +35,51 @@ toddler_steering_wheel.stl
 
 ## Environment
 
-The project has a local Python virtual environment created with `uv`:
+The repo now has a working Windows local Python virtual environment:
 
 ```text
 .venv
 ```
 
-Installed packages include:
+On Windows 11, confirmed working packages include:
 
 ```text
-cadquery==2.7.0
-cq-editor==0.7.0
+cadquery==2.5.2
+cq-editor==0.5.0
 ```
 
-`uv` was used because `conda`/`mamba` were not visible from the Codex shell, while `uv` was available and already had a Python 3.12 install.
+There is also historical macOS setup context from the earlier machine where `uv` was used because `conda`/`mamba` were not visible from the Codex shell.
+
+Cross-platform environment/setup notes now live here:
+
+```text
+docs/environment_setup.md
+```
 
 ## Useful Commands
 
-Regenerate STEP and STL:
+Windows 11 regenerate STEP and STL:
+
+```powershell
+.\.venv\Scripts\python toddler_steering_wheel.py
+```
+
+Windows 11 open in CQ-editor:
+
+```powershell
+.\launch_cq_editor_windows.bat
+```
+
+macOS regenerate STEP and STL:
 
 ```bash
-cd ~/dev/cad/toddler-steering-wheel
 .venv/bin/python toddler_steering_wheel.py
 ```
 
-Open in CQ-editor:
+macOS open in CQ-editor:
 
 ```bash
-cd ~/dev/cad/toddler-steering-wheel
 QT_ENABLE_HIGHDPI_SCALING=0 .venv/bin/cq-editor toddler_steering_wheel.py
-```
-
-A convenience shortcut was created at:
-
-```text
-/Users/pabloaizpiri/.local/bin/cqeditor
-```
-
-So this should open the model with the macOS HiDPI workaround applied:
-
-```bash
-cqeditor
 ```
 
 ## CQ-editor Display Bug
@@ -84,6 +88,12 @@ CQ-editor had a macOS HiDPI/Retina scaling issue where the 3D viewport rendered 
 
 ```bash
 QT_ENABLE_HIGHDPI_SCALING=0
+```
+
+On Windows 11, CQ-editor installed successfully in the repo-local `.venv`, but needed a wrapper launcher so Spyder config and `ezdxf` cache would use repo-local folders rather than user-home locations:
+
+```text
+launch_cq_editor_windows.bat
 ```
 
 ## Current CAD State
