@@ -11,9 +11,11 @@ if not exist ".venv\Scripts\CQ-editor.exe" (
 )
 
 if not exist ".local-config\spyder" mkdir ".local-config\spyder"
+if not exist ".local-appdata" mkdir ".local-appdata"
 if not exist ".local-cache" mkdir ".local-cache"
 
 set "SPYDER_CONFDIR=%CD%\.local-config\spyder"
+set "LOCALAPPDATA=%CD%\.local-appdata"
 set "XDG_CACHE_HOME=%CD%\.local-cache"
 
 echo Launching CQ-editor with project-local config/cache folders...

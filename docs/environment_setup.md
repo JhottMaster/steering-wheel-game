@@ -36,6 +36,7 @@ Install into the same virtual environment:
 
 ```powershell
 .\.venv\Scripts\python -m pip install cq-editor
+.\.venv\Scripts\python -m pip install "setuptools<81"
 ```
 
 Launch with the project-local wrapper:
@@ -48,9 +49,13 @@ Why the wrapper exists:
 
 - CQ-editor / Spyder wanted to write config under `C:\Users\Pablo\.spyder-py3`
 - `ezdxf` wanted to write cache under `C:\Users\Pablo\.cache`
+- `qtawesome` wanted to copy icon fonts under the Windows user font folder
 - this repo now uses local folders instead:
   - `.local-config\spyder`
+  - `.local-appdata`
   - `.local-cache`
+
+The `setuptools<81` pin is required because CQ-editor imports `pkg_resources`, which is no longer available in newer `setuptools` releases.
 
 ## macOS
 
@@ -81,5 +86,5 @@ The HiDPI environment variable was important on macOS because CQ-editor rendered
 ## Repo Notes
 
 - `firmware/xiao_bno055_udp_sender/wifi_secrets.h` is intentionally local-only and ignored by git.
-- `.venv/`, `.local-config/`, and `.local-cache/` are also local-only and ignored.
+- `.venv/`, `.local-config/`, `.local-appdata/`, and `.local-cache/` are also local-only and ignored.
 - The current CAD model now exports both the wheel and a separate removable cartridge part.
