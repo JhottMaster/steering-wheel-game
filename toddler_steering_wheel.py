@@ -240,7 +240,7 @@ def make_diameter_spanning_tray(
     tray_depth,
     wall_thickness,
     wall_height,
-    side_clearance=1.0,
+    side_clearance=0,
 ):
     """Create a tray whose width spans the cartridge's inner diameter at center_y."""
     inner_radius = inner_diameter / 2.0
@@ -392,7 +392,7 @@ if include_modular_cartridge_hub:
             charge_port_width,
             charge_port_height,
             charge_port_center_x,
-            charge_port_center_y,
+            charge_port_center_y + 1,
             cartridge_floor_thickness,
         )
 
@@ -415,7 +415,7 @@ if include_modular_cartridge_hub:
             charge_board_width,
             charge_board_slot_height,
             charge_port_center_x,
-            charge_port_center_y,
+            charge_port_center_y - 1,
             cartridge_floor_thickness,
             charge_board_slot_wall_thickness,
             charge_board_slot_depth,
@@ -428,7 +428,7 @@ if include_modular_cartridge_hub:
             charge_port_width,
             charge_port_height,
             charge_port_center_x,
-            charge_port_center_y + 39,
+            charge_port_center_y + 40,
             cartridge_floor_thickness,
         )
 
@@ -438,8 +438,20 @@ if include_modular_cartridge_hub:
             inner_diameter=cartridge_inner_diameter,
             tray_depth=tray_depth,
             wall_thickness=0.8,
-            wall_height=2.2,
-            side_clearance=1.5,
+            wall_height=2.2
+        )
+
+        print("Adding slot for MCU...")
+        cartridge_result = add_charger_slot(
+            cartridge_result,
+            charge_board_width,
+            charge_board_slot_height,
+            charge_port_center_x,
+            charge_port_center_y+38,
+            cartridge_floor_thickness,
+            charge_board_slot_wall_thickness,
+            charge_board_slot_depth,
+            charge_board_slot_clearance,
         )
 
         
@@ -452,8 +464,7 @@ if include_modular_cartridge_hub:
             inner_diameter=cartridge_inner_diameter,
             tray_depth=tray_depth,
             wall_thickness=0.8,
-            wall_height=2.2,
-            side_clearance=1.5,
+            wall_height=2.2
         )
 
         battery_tray = make_diameter_spanning_tray(
@@ -462,8 +473,7 @@ if include_modular_cartridge_hub:
             inner_diameter=cartridge_inner_diameter,
             tray_depth=tray_depth,
             wall_thickness=0.8,
-            wall_height=2.2,
-            side_clearance=1.5,
+            wall_height=2.2
         )
 
         cartridge_result = cartridge_result.union(sensor_tray).union(battery_tray)
