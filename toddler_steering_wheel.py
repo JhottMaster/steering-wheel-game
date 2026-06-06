@@ -213,7 +213,6 @@ def make_horizontal_board_pegs(
         (-spacing_x / 2.0, spacing_z / 2.0),
         (spacing_x / 2.0, spacing_z / 2.0),
     ]
-
     for offset_x, offset_z in points:
         peg = (
             cq.Workplane("XY")
@@ -333,8 +332,8 @@ charge_port_center_y = -20.0
 charge_port_center_x = 0.0
 tray_depth = 20.0
 
-charge_board_width = 21.0
-charge_board_slot_depth = 15.0
+charge_board_width = 19.0
+charge_board_slot_depth = 21.0
 charge_board_slot_height = 5.0
 charge_board_slot_wall_thickness = 1.0
 charge_board_slot_clearance = 0.6
@@ -392,7 +391,7 @@ if include_modular_cartridge_hub:
             charge_port_width,
             charge_port_height,
             charge_port_center_x,
-            charge_port_center_y + 1,
+            charge_port_center_y + 2,
             cartridge_floor_thickness,
         )
 
@@ -400,10 +399,10 @@ if include_modular_cartridge_hub:
         charger_pegs = make_horizontal_board_pegs(
             center_x=charge_port_center_x,
             center_y=charge_port_center_y,
-            center_z=cartridge_floor_thickness + 8.0,
-            spacing_x=11.0,
-            spacing_z=12.0,
-            peg_diameter=1.6,
+            center_z=cartridge_floor_thickness + 11.0,
+            spacing_x=14.0,
+            spacing_z=15.0,
+            peg_diameter=1.8,
             peg_length=5.0,
         )
 
