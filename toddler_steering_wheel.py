@@ -322,9 +322,7 @@ cartridge_lid_result = None
 # The wheel gets a keyed cavity from the back.
 # A separate starter cartridge shell is exported for iteration.
 # -----------------------------
-include_cartridge_charge_port = True
-include_cartridge_component_trays = True
-include_cartridge_upright_charger_slot = True
+include_internal_sensor_housing = True
 
 charge_port_width = 9.5
 charge_port_height = 5.0
@@ -384,99 +382,90 @@ if include_modular_cartridge_hub:
 
     cartridge_result = cartridge_outer.cut(cartridge_inner)
 
-    if include_cartridge_charge_port:
+    if include_internal_sensor_housing:
+        # Battery management system board tray / battery cover
+        battery_tray = make_diameter_spanning_tray(
+            center_y=-16.0,
+            floor_z=cartridge_floor_thickness,
+            inner_diameter=cartridge_inner_diameter,
+            tray_depth=21.5,
+            wall_thickness=0.8,
+            wall_height=2
+        )
+        cartridge_result = cartridge_result.union(battery_tray)
+
+        # Battery Charging port
         print("Cutting cartridge charging port...")
         cartridge_result = add_rear_charge_port(
             cartridge_result,
             charge_port_width,
             charge_port_height,
-            charge_port_center_x,
-            charge_port_center_y + 2,
+            charge_port_center_x + 14,
+            charge_port_center_y + 10,
             cartridge_floor_thickness,
         )
 
+        # Battery management system board mounting pegs
         print("Adding mounting pegs...")
         charger_pegs = make_horizontal_board_pegs(
-            center_x=charge_port_center_x,
-            center_y=charge_port_center_y,
+            center_x=charge_port_center_x + 14,
+            center_y=charge_port_center_y + 8,
             center_z=cartridge_floor_thickness + 11.0,
             spacing_x=14.0,
             spacing_z=15.0,
             peg_diameter=1.8,
-            peg_length=5.0,
+            peg_length=4.0,
         )
-
         cartridge_result = cartridge_result.union(charger_pegs)
         
+        # Battery management system board slots (walls)
         print("Adding slot for charger...")
         cartridge_result = add_charger_slot(
             cartridge_result,
             charge_board_width,
             charge_board_slot_height,
-            charge_port_center_x,
-            charge_port_center_y - 1,
+            charge_port_center_x + 14,
+            charge_port_center_y + 7,
             cartridge_floor_thickness,
             charge_board_slot_wall_thickness,
-            charge_board_slot_depth,
+            19,
             charge_board_slot_clearance,
         )
 
-
+        # XIAO MCU rear data port
         cartridge_result = add_rear_charge_port(
             cartridge_result,
             charge_port_width,
             charge_port_height,
             charge_port_center_x,
-            charge_port_center_y + 40,
+            charge_port_center_y + 45,
             cartridge_floor_thickness,
         )
 
+        # XIAO MCU holder tray
         mcu_tray = make_diameter_spanning_tray(
-            center_y=15.0,
+            center_y=20.0,
             floor_z=cartridge_floor_thickness,
             inner_diameter=cartridge_inner_diameter,
             tray_depth=tray_depth,
             wall_thickness=0.8,
-            wall_height=2.2
+            wall_height=2
         )
 
+        # XIAO MCU board slots (walls)
         print("Adding slot for MCU...")
         cartridge_result = add_charger_slot(
             cartridge_result,
             charge_board_width,
             charge_board_slot_height,
             charge_port_center_x,
-            charge_port_center_y+38,
+            charge_port_center_y+42,
             cartridge_floor_thickness,
             charge_board_slot_wall_thickness,
-            charge_board_slot_depth,
+            charge_board_slot_depth - 3,
             charge_board_slot_clearance,
         )
-
-        
         cartridge_result = cartridge_result.union(mcu_tray)
-
-
-        sensor_tray = make_diameter_spanning_tray(
-            center_y=2.0,
-            floor_z=cartridge_floor_thickness,
-            inner_diameter=cartridge_inner_diameter,
-            tray_depth=tray_depth,
-            wall_thickness=0.8,
-            wall_height=2.2
-        )
-
-        battery_tray = make_diameter_spanning_tray(
-            center_y=-6.0,
-            floor_z=cartridge_floor_thickness,
-            inner_diameter=cartridge_inner_diameter,
-            tray_depth=tray_depth,
-            wall_thickness=0.8,
-            wall_height=2.2
-        )
-
-        cartridge_result = cartridge_result.union(sensor_tray).union(battery_tray)
-
 
 
     print("Building starter cartridge lid...")
