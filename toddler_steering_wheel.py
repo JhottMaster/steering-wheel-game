@@ -455,7 +455,7 @@ if include_modular_cartridge_hub:
 
         # Battery wall:
         battery_rail_short = make_rail(
-            center_x= battery_wall_offset - battery_length_mm,
+            center_x= battery_wall_offset - battery_length_mm - 2,
             center_y=-20,
             floor_z=0, 
             wall_thickness=2,
@@ -477,7 +477,7 @@ if include_modular_cartridge_hub:
             center_x=shift_right-6,
             center_y=-17.0,
             floor_z=cartridge_floor_thickness,
-            tray_width=35,
+            tray_width=36,
             tray_thickness=2,
             depth=tray_depth
         )
@@ -490,7 +490,7 @@ if include_modular_cartridge_hub:
             charge_port_width - 1,
             charge_port_height * .75,
             charge_port_center_x + shift_right,
-            charge_port_center_y + shift_down,
+            charge_port_center_y + shift_down - 0.5,
             cartridge_floor_thickness,
         )
 
@@ -524,8 +524,8 @@ if include_modular_cartridge_hub:
             center_x=0,
             center_y=4,
             center_z=cartridge_floor_thickness,
-            spacing_x=21.0,
-            spacing_y=14.0,
+            spacing_x=21.2,
+            spacing_y=15.0,
             peg_diameter=1.8,
             peg_length=4.0,
         )
