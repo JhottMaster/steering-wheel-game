@@ -27,7 +27,7 @@ include_modular_cartridge_hub = True
 hub_rear_lip_thickness = 3.0
 hub_rear_lip_radial_width = 3.0
 cartridge_outer_diameter = 62.0
-cartridge_fit_clearance = 0.35
+cartridge_fit_clearance = 0.20
 cartridge_key_flat_depth = 6.0
 cartridge_key_angle = -90.0
 cartridge_floor_thickness = 2.4
@@ -36,7 +36,7 @@ cartridge_has_front_cap = False
 cartridge_front_face_thickness = 2.4
 cartridge_lid_thickness = 2.4
 cartridge_lid_overlap_depth = 3.0
-cartridge_lid_clearance = 0.2
+cartridge_lid_clearance = 0.15
 
 # Export filenames
 step_filename = "toddler_steering_wheel.step"
@@ -218,6 +218,39 @@ def add_slot(
             clearance,
         )
     )
+
+def make_flat_board_pegs(
+    center_x,
+    center_y,
+    center_z,
+    spacing_x,
+    spacing_y,
+    peg_diameter,
+    peg_length,
+):
+    pegs = cq.Workplane("XY")
+
+    points = [
+        (-spacing_x / 2.0, -spacing_y / 2.0),
+        (spacing_x / 2.0, -spacing_y / 2.0),
+        (-spacing_x / 2.0, spacing_y / 2.0),
+        (spacing_x / 2.0, spacing_y / 2.0),
+    ]
+    for offset_x, offset_y in points:
+        peg = (
+            cq.Workplane("XY")
+            .circle(peg_diameter / 2.0)
+            .extrude(peg_length)
+            .translate((
+                center_x + offset_x,
+                center_y + offset_y,
+                center_z,
+            ))
+        )
+
+        pegs = pegs.union(peg)
+
+    return pegs
 
 def make_horizontal_board_pegs(
     center_x,
@@ -486,6 +519,18 @@ if include_modular_cartridge_hub:
             charge_board_slot_clearance,
         )
 
+        # BNO055 Sensor pegs
+        sensor_pegs = make_flat_board_pegs(
+            center_x=0,
+            center_y=4,
+            center_z=cartridge_floor_thickness,
+            spacing_x=21.0,
+            spacing_y=14.0,
+            peg_diameter=1.8,
+            peg_length=4.0,
+        )
+        cartridge_result = cartridge_result.union(sensor_pegs)
+
         # XIAO MCU rear data port
         cartridge_result = add_rear_charge_port(
             cartridge_result,
@@ -537,9 +582,10 @@ if include_modular_cartridge_hub:
     cartridge_lid_result = lid_plate.union(lid_insert)
 
     # Add buttons
+    button_hold_diameter = 16
     button_distance = 32
-    cartridge_lid_result = cut_hole(cartridge_lid_result, 15, cartridge_lid_insert_depth + cartridge_lid_thickness, -(button_distance/2), 0, cartridge_lid_thickness)
-    cartridge_lid_result = cut_hole(cartridge_lid_result, 15, cartridge_lid_insert_depth + cartridge_lid_thickness, (button_distance/2), 0, cartridge_lid_thickness)
+    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -(button_distance/2), 0, cartridge_lid_thickness)
+    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, (button_distance/2), 0, cartridge_lid_thickness)
 
 
 # -----------------------------
