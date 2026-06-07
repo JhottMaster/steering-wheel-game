@@ -102,13 +102,14 @@ def add_rear_charge_port(
     height,
     center_x,
     center_y,
+    center_z,
     floor_thickness,
 ):
     """Cut a rear-facing USB plug opening through the cartridge back cap."""
     port_cut = (
         cq.Workplane("XY")
         .box(width, height, floor_thickness + 0.6)
-        .translate((center_x, center_y, floor_thickness / 2.0))
+        .translate((center_x, center_y, center_z + (floor_thickness / 2.0)))
     )
     return cartridge.cut(port_cut)
 
@@ -165,21 +166,21 @@ def make_upright_board_slot(
     slot_depth,
     center_x,
     center_y,
-    floor_z,
+    center_z,
     wall_thickness,
     wall_height,
     clearance,
 ):
     """Create side rails for a board standing orthogonal to the back cap."""
     rail_x = board_width / 2.0 + clearance + wall_thickness / 2.0
-    left_rail = make_rail(center_x - rail_x, center_y, floor_z, wall_thickness, wall_height, slot_depth)
-    right_rail = make_rail(center_x + rail_x, center_y, floor_z, wall_thickness, wall_height, slot_depth)
+    left_rail = make_rail(center_x - rail_x, center_y, center_z, wall_thickness, wall_height, slot_depth)
+    right_rail = make_rail(center_x + rail_x, center_y, center_z, wall_thickness, wall_height, slot_depth)
     return left_rail.union(right_rail)
 
 def make_rail(
     center_x,
     center_y,   
-    floor_z,
+    center_z,
     wall_thickness, 
     slot_depth, 
     wall_height
@@ -189,7 +190,7 @@ def make_rail(
     return (
         cq.Workplane("XY")
         .box(*rail_size)
-        .translate((center_x, center_y, floor_z + slot_depth / 2.0))
+        .translate((center_x, center_y, center_z + (slot_depth / 2.0)))
     )
 
 
@@ -199,7 +200,7 @@ def add_slot(
     slot_depth,
     center_x,
     center_y,
-    floor_z,
+    center_z,
     wall_thickness,
     wall_height,
     clearance,
@@ -212,7 +213,7 @@ def add_slot(
             slot_depth,
             center_x,
             center_y,
-            floor_z,
+            center_z,
             wall_thickness,
             wall_height,
             clearance,
@@ -444,12 +445,30 @@ if include_modular_cartridge_hub:
         )
         .translate((0, 0, inner_start_z))
     )
-
     cartridge_result = cartridge_outer.cut(cartridge_inner)
 
+    cartridge_extension = make_cylinder_with_flat(
+        cartridge_rear_stop_diameter,
+        10,
+        10,
+        cartridge_key_angle,
+    ).faces("<Z").fillet(hub_roundover_radius).translate((0, 0, -10))
+
+
+
+    cartridge_result = cartridge_result.union(cartridge_extension)
+
+    cartridge_extension_cut = make_cylinder_with_flat(
+        cartridge_rear_stop_diameter - 5,
+        15,
+        cartridge_key_flat_depth + cartridge_fit_clearance + 3.30,
+        cartridge_key_angle,
+    ).translate((0, 0, hub_thickness-36))
+    cartridge_result = cartridge_result.cut(cartridge_extension_cut)
+
+
     if include_internal_sensor_housing:
-        shift_right = 13
-        shift_down = 7
+        
         battery_length_mm = 26
         battery_wall_offset = 18
 
@@ -457,7 +476,7 @@ if include_modular_cartridge_hub:
         battery_rail_short = make_rail(
             center_x= battery_wall_offset - battery_length_mm - 2,
             center_y=-20,
-            floor_z=0, 
+            center_z=0, 
             wall_thickness=2,
             slot_depth=10,
             wall_height=8
@@ -465,12 +484,16 @@ if include_modular_cartridge_hub:
         battery_rail_long = make_rail(
             center_x=battery_wall_offset,
             center_y=-20,
-            floor_z=0, 
+            center_z=0, 
             wall_thickness=2,
             slot_depth=tray_depth,
             wall_height=8
         )
         cartridge_result = cartridge_result.union(battery_rail_short).union(battery_rail_long)
+
+        shift_right = 9
+        shift_down = 7
+        shift_back = 11
 
         # Battery management system board tray / battery cover
         battery_tray = make_spanning_tray(
@@ -479,7 +502,7 @@ if include_modular_cartridge_hub:
             floor_z=cartridge_floor_thickness,
             tray_width=36,
             tray_thickness=2,
-            depth=tray_depth
+            depth=tray_depth-5
         )
 
         cartridge_result = cartridge_result.union(battery_tray)
@@ -491,14 +514,15 @@ if include_modular_cartridge_hub:
             charge_port_height * .75,
             charge_port_center_x + shift_right,
             charge_port_center_y + shift_down - 0.5,
-            cartridge_floor_thickness,
+            -10,
+            cartridge_floor_thickness + 1,
         )
 
         # Battery management system board mounting pegs
         charger_pegs = make_horizontal_board_pegs(
             center_x=charge_port_center_x + shift_right,
             center_y=charge_port_center_y + shift_down,
-            center_z=cartridge_floor_thickness + 11.0,
+            center_z=cartridge_floor_thickness + 1.0,
             spacing_x=14.0,
             spacing_z=15.0,
             peg_diameter=1.8,
@@ -513,7 +537,7 @@ if include_modular_cartridge_hub:
             charge_board_slot_height,
             charge_port_center_x + shift_right,
             charge_port_center_y + shift_down - 2,
-            cartridge_floor_thickness,
+            cartridge_floor_thickness - 10,
             charge_board_slot_wall_thickness,
             19,
             charge_board_slot_clearance,
@@ -522,8 +546,8 @@ if include_modular_cartridge_hub:
         # BNO055 Sensor pegs
         sensor_pegs = make_flat_board_pegs(
             center_x=0,
-            center_y=4,
-            center_z=cartridge_floor_thickness,
+            center_y=3,
+            center_z=cartridge_floor_thickness - 11,
             spacing_x=21.2,
             spacing_y=15.0,
             peg_diameter=1.8,
@@ -531,21 +555,25 @@ if include_modular_cartridge_hub:
         )
         cartridge_result = cartridge_result.union(sensor_pegs)
 
+        xiao_down_shift = -3
+        xiao_back_shift = -11
+
         # XIAO MCU rear data port
         cartridge_result = add_rear_charge_port(
             cartridge_result,
             charge_port_width,
             charge_port_height * 0.6,
             charge_port_center_x,
-            charge_port_center_y + 45,
-            cartridge_floor_thickness,
+            charge_port_center_y + 45 + xiao_down_shift,
+            xiao_back_shift,
+            cartridge_floor_thickness + 1,
         )
 
         # # XIAO MCU holder tray
         mcu_tray = make_spanning_tray(
             center_x= 0,
-            center_y=20.0,
-            floor_z=cartridge_floor_thickness,
+            center_y=20.0 + xiao_down_shift,
+            floor_z=cartridge_floor_thickness + xiao_back_shift ,
             tray_width=22,
             tray_thickness=2,
             depth=tray_depth
@@ -557,8 +585,8 @@ if include_modular_cartridge_hub:
             charge_board_width - 1,
             charge_board_slot_height,
             charge_port_center_x,
-            charge_port_center_y+42,
-            cartridge_floor_thickness,
+            charge_port_center_y+42+xiao_down_shift,
+            cartridge_floor_thickness + xiao_back_shift ,
             charge_board_slot_wall_thickness,
             charge_board_slot_depth - 3,
             charge_board_slot_clearance,
@@ -584,8 +612,9 @@ if include_modular_cartridge_hub:
     # Add buttons
     button_hold_diameter = 16
     button_distance = 32
-    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -(button_distance/2), 0, cartridge_lid_thickness)
-    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, (button_distance/2), 0, cartridge_lid_thickness)
+    button_height = 5
+    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -button_distance/2, button_height, cartridge_lid_thickness)
+    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, button_distance/2, button_height, cartridge_lid_thickness)
 
 
 # -----------------------------
