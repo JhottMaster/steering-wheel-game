@@ -8,7 +8,7 @@ from cadquery import exporters
 # -----------------------------
 # Main dimensions
 # -----------------------------
-wheel_outer_diameter = 180.0
+wheel_outer_diameter = 184.0
 wheel_inner_diameter = 118.0
 wheel_thickness = 16.0
 grip_roundover_radius = 7.0
@@ -114,8 +114,7 @@ def add_rear_charge_port(
     return cartridge.cut(port_cut)
 
 
-def cut_hole(
-    object,
+def make_cylinder_hole(
     diameter,
     depth,
     center_x,
@@ -123,13 +122,12 @@ def cut_hole(
     center_z
 ):
     """Cut a rear-facing hole"""
-    hole_cut = (
+    return (
         cq.Workplane("XY")
             .circle(diameter / 2.0)
             .extrude(-depth)
             .translate((center_x, center_y, center_z))
     )
-    return object.cut(hole_cut)
 
 
 def make_component_tray(
@@ -359,6 +357,10 @@ hub = (
 print("Building spokes...")
 spokes = cq.Workplane("XY")
 
+wheel_grip_width = wheel_outer_diameter - wheel_inner_diameter
+button_hold_diameter = 16
+button_insets = []
+
 for i in range(spoke_count):
     angle = i * (360.0 / spoke_count)
 
@@ -370,15 +372,35 @@ for i in range(spoke_count):
         .edges("|Z")
         .fillet(spoke_roundover_radius)
     )
-
     spokes = spokes.union(spoke)
 
+    if i == 1 or i == 2:
+        wiring_spoke = (
+            cq.Workplane("YZ")
+            # .box(spoke_length * 2, spoke_width / 3, spoke_thickness / 2)
+            .circle(spoke_width / 5)
+            .extrude(spoke_length * 3)
+            .translate((0, 0, 5.5))
+            .rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        )
+        inset_offset = spoke_center_offset + spoke_width + ((wheel_grip_width/2) * .2)
+        button_inset_hole = make_cylinder_hole(button_hold_diameter, -5, inset_offset, 0, spoke_thickness - 3).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        hex_prism = (
+            cq.Workplane("XY")
+            .polygon(6, 21.5)
+            .extrude(25)
+        ).rotate((0, 0, 0), (0, 0, 1), angle - 90).translate((inset_offset, 0, -spoke_thickness)).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        wiring_spoke = wiring_spoke.union(button_inset_hole).union(hex_prism)
+        button_insets.append(wiring_spoke)
 
 # -----------------------------
 # Combine main body
 # -----------------------------
 print("Combining body...")
 result = rim.union(spokes).union(hub)
+for button_inset in button_insets:
+    result = result.cut(button_inset)
+
 cartridge_result = None
 cartridge_lid_result = None
 
@@ -465,6 +487,9 @@ if include_modular_cartridge_hub:
         cartridge_key_angle,
     ).translate((0, 0, hub_thickness-36))
     cartridge_result = cartridge_result.cut(cartridge_extension_cut)
+
+    for button_inset in button_insets:
+        cartridge_result = cartridge_result.cut(button_inset)
 
 
     if include_internal_sensor_housing:
@@ -610,12 +635,10 @@ if include_modular_cartridge_hub:
     cartridge_lid_result = lid_plate.union(lid_insert)
 
     # Add buttons
-    button_hold_diameter = 16
     button_distance = 32
     button_height = 5
-    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -button_distance/2, button_height, cartridge_lid_thickness)
-    cartridge_lid_result = cut_hole(cartridge_lid_result, button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, button_distance/2, button_height, cartridge_lid_thickness)
-
+    cartridge_lid_result = cartridge_lid_result.cut(make_cylinder_hole(button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -button_distance/2, button_height, cartridge_lid_thickness))
+    cartridge_lid_result = cartridge_lid_result.cut(make_cylinder_hole(button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, button_distance/2, button_height, cartridge_lid_thickness))
 
 # -----------------------------
 # Rear electronics pocket
