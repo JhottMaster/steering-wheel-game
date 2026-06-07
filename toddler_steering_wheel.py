@@ -14,7 +14,7 @@ wheel_thickness = 16.0
 grip_roundover_radius = 7.0
 
 hub_diameter = 78.0
-hub_thickness = 28.0
+hub_thickness = 35.0
 hub_roundover_radius = 2.0
 
 spoke_count = 3
@@ -324,6 +324,80 @@ def make_diameter_spanning_tray(
 
     return make_spanning_tray(0, center_y, floor_z, width, wall_height, depth)
 
+def cut_in_half_z(model, z_cut_location):
+    cutter = cq.Workplane("XY").box(1000, 1000, 1000)
+    lower_half = model.cut(cutter.translate((0, 0, z_cut_location + 500)))
+    upper_half = model.cut(cutter.translate((0, 0, z_cut_location - 500)))
+    return lower_half, upper_half
+
+
+def show_debug(object, name="debug_obj"):
+    show_object(
+        object,
+        name=name,
+        options={
+            "color": (255, 0, 0),
+            "alpha": 0.25,
+        },
+    )
+
+def make_screw_hole(x, y, z_start, full_screw_length):
+    """Create a stepped vertical screw/inset cutout starting at z_start."""
+    insert_diameter = 4.0
+    insert_height = 3.0
+
+    screw_channel_diameter = 2.1
+
+    screw_head_diameter = 5.0
+    screw_head_height = 2.5
+    screw_head_extra_depth = 5.0
+
+    channel_length = full_screw_length - insert_height - screw_head_height
+
+    if channel_length < 0:
+        raise ValueError("full_screw_length is too short for insert + screw head")
+
+    insert_center_z = z_start + insert_height / 2.0
+    channel_center_z = z_start + insert_height + channel_length / 2.0
+    head_center_z = (
+        z_start
+        + insert_height
+        + channel_length
+        + screw_head_height 
+        + (screw_head_extra_depth / 2.0)
+    )
+
+    hole = make_cylinder_hole(
+        insert_diameter,
+        insert_height,
+        x,
+        y,
+        insert_center_z,
+    )
+
+    hole = hole.union(
+        make_cylinder_hole(
+            screw_channel_diameter,
+            channel_length,
+            x,
+            y,
+            channel_center_z,
+        )
+    )
+
+    hole = hole.union(
+        make_cylinder_hole(
+            screw_head_diameter,
+            screw_head_height + screw_head_extra_depth,
+            x,
+            y,
+            head_center_z,
+        )
+    )
+
+    return hole
+
+
 # -----------------------------
 # Wheel rim
 # -----------------------------
@@ -348,7 +422,7 @@ hub = (
     .extrude(hub_thickness)
     .edges("%CIRCLE")
     .fillet(hub_roundover_radius)
-)
+).translate((0, 0, -10))
 
 
 # -----------------------------
@@ -367,31 +441,34 @@ for i in range(spoke_count):
     spoke = (
         cq.Workplane("XY")
         .box(spoke_length, spoke_width, spoke_thickness)
+        .edges("|X")
+        .fillet(spoke_roundover_radius)
         .translate((spoke_center_offset, 0, spoke_thickness / 2))
         .rotate((0, 0, 0), (0, 0, 1), angle - 90)
-        .edges("|Z")
-        .fillet(spoke_roundover_radius)
     )
     spokes = spokes.union(spoke)
 
+    wiring_spoke = (
+        cq.Workplane("YZ")
+        .circle(spoke_width / 7)
+        .extrude(spoke_length * 3)
+        .translate((0, 0, spoke_thickness / 2))
+        .rotate((0, 0, 0), (0, 0, 1), angle - 90)
+    )
+
     if i == 1 or i == 2:
-        wiring_spoke = (
-            cq.Workplane("YZ")
-            # .box(spoke_length * 2, spoke_width / 3, spoke_thickness / 2)
-            .circle(spoke_width / 5)
-            .extrude(spoke_length * 3)
-            .translate((0, 0, 5.5))
-            .rotate((0, 0, 0), (0, 0, 1), angle - 90)
-        )
+        
         inset_offset = spoke_center_offset + spoke_width + ((wheel_grip_width/2) * .2)
         button_inset_hole = make_cylinder_hole(button_hold_diameter, -5, inset_offset, 0, spoke_thickness - 3).rotate((0, 0, 0), (0, 0, 1), angle - 90)
         hex_prism = (
             cq.Workplane("XY")
-            .polygon(6, 21.5)
-            .extrude(25)
-        ).rotate((0, 0, 0), (0, 0, 1), angle - 90).translate((inset_offset, 0, -spoke_thickness)).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+            .polygon(6, 22.5)
+            .extrude(10)
+        ).rotate((0, 0, 0), (0, 0, 1), angle - 90).translate((inset_offset, 0, -spoke_thickness+15)).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        #show_debug(hex_prism)
         wiring_spoke = wiring_spoke.union(button_inset_hole).union(hex_prism)
-        button_insets.append(wiring_spoke)
+    
+    button_insets.append(wiring_spoke)
 
 # -----------------------------
 # Combine main body
@@ -400,6 +477,26 @@ print("Combining body...")
 result = rim.union(spokes).union(hub)
 for button_inset in button_insets:
     result = result.cut(button_inset)
+
+# Make antenna compartment:
+antenna_compartment = cq.Workplane("XY").box(41, 22, 8).edges().fillet(1).translate((0, -spoke_center_offset-25, 8))
+# show_debug(antenna_compartment)
+result = result.cut(antenna_compartment)
+
+# Add screw holes
+
+screw_count = 4
+screw_length = 10
+
+for i in range(screw_count):
+    angle = i * (360.0 / screw_count)
+    screw = make_screw_hole(spoke_center_offset + 25, 0, -12.5, screw_length).rotate((0, 0, 0), (1, 0, 0), 180).rotate((0, 0, 0), (0, 0, 1), angle - 45)
+    result = result.cut(screw)
+    show_debug(screw)
+    
+
+
+
 
 cartridge_result = None
 cartridge_lid_result = None
@@ -433,22 +530,27 @@ cartridge_component_trays = [
 ]
 
 if include_modular_cartridge_hub:
-    print("Cutting keyed through-cartridge cavity...")
-    front_cavity_cut = make_cylinder_with_flat(
-        cartridge_cavity_diameter,
-        cartridge_cavity_depth + 0.2,
-        cartridge_key_flat_depth + cartridge_fit_clearance,
-        cartridge_key_angle,
-    ).translate((0, 0, hub_thickness - cartridge_cavity_depth))
+    # print("Cutting keyed through-cartridge cavity...")
+    # front_cavity_cut = make_cylinder_with_flat(
+    #     cartridge_cavity_diameter,
+    #     cartridge_cavity_depth + 0.2,
+    #     cartridge_key_flat_depth + cartridge_fit_clearance,
+    #     cartridge_key_angle,
+    # ).translate((0, 0, hub_thickness - cartridge_cavity_depth))
 
-    rear_stop_opening_cut = (
+    cavity = (
         cq.Workplane("XY")
-        .circle(cartridge_rear_stop_diameter / 2.0)
-        .extrude(hub_rear_lip_thickness + 0.2)
-        .translate((0, 0, -0.1))
+        .circle(cartridge_cavity_diameter / 2.0)
+        .extrude(cartridge_cavity_depth)
+        .translate((0, 0, -12 + hub_thickness - cartridge_cavity_depth))
     )
 
-    result = result.cut(front_cavity_cut).cut(rear_stop_opening_cut)
+    result = result.cut(cavity)
+    # show_debug(cavity)
+
+
+    first_half, second_half = cut_in_half_z(result, 11)
+
 
     print("Building starter cartridge shell...")
     cartridge_outer = make_cylinder_with_flat(
@@ -724,17 +826,21 @@ preview_cartridge_y = -wheel_outer_diameter * .75
 preview_lid_y = preview_cartridge_y - cartridge_outer_diameter - 15
 
 try:
-    show_object(result, name="steering_wheel")
-    if cartridge_result is not None:
-        show_object(
-            cartridge_result.translate((0, preview_cartridge_y, 0)),
-            name="electronics_cartridge",
-        )
-    if cartridge_lid_result is not None:
-        show_object(
-            cartridge_lid_result.translate((0, preview_lid_y, 0)),
-            name="cartridge_lid",
-        )
+#     show_object(result, name="steering_wheel")
+#     if cartridge_result is not None:
+#         show_object(
+#             cartridge_result.translate((0, preview_cartridge_y, 0)),
+#             name="electronics_cartridge",
+#         )
+#     if cartridge_lid_result is not None:
+#         show_object(
+#             cartridge_lid_result.translate((0, preview_lid_y, 0)),
+#             name="cartridge_lid",
+#         )
+
+    show_object(first_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_whee_bottom")
+    show_object(second_half.translate((0, 0, 0)), name="steering_whee_top")
+
     running_in_cq_editor = True
 except NameError:
     running_in_cq_editor = False
