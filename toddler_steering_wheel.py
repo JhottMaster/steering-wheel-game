@@ -26,8 +26,6 @@ spoke_roundover_radius = 2.0
 include_modular_cartridge_hub = True
 hub_rear_lip_thickness = 3.0
 cartridge_cavity_diameter = 62.4
-cartridge_key_flat_depth = 6.0
-cartridge_key_angle = -90.0
 cartridge_floor_thickness = 2.4
 
 # -----------------------------
@@ -62,17 +60,21 @@ def add_rear_charge_port(
 
 def make_cylinder_hole(
     diameter,
-    depth,
+    length,
     center_x,
     center_y,
-    center_z
+    start_z,
+    z_direction=-1,
 ):
-    """Cut a rear-facing hole"""
+    """Create a vertical cylindrical cut body from start_z."""
+    if length < 0:
+        raise ValueError("length must be positive")
+
     return (
         cq.Workplane("XY")
             .circle(diameter / 2.0)
-            .extrude(-depth)
-            .translate((center_x, center_y, center_z))
+            .extrude(length * z_direction)
+            .translate((center_x, center_y, start_z))
     )
 
 
@@ -82,29 +84,41 @@ def make_upright_board_slot(
     center_x,
     center_y,
     center_z,
-    wall_thickness,
-    wall_height,
+    rail_thickness,
+    rail_height,
     clearance,
 ):
     """Create side rails for a board standing orthogonal to the back cap."""
-    rail_x = board_width / 2.0 + clearance + wall_thickness / 2.0
-    left_rail = make_rail(center_x - rail_x, center_y, center_z, wall_thickness, wall_height, slot_depth)
-    right_rail = make_rail(center_x + rail_x, center_y, center_z, wall_thickness, wall_height, slot_depth)
+    rail_x = board_width / 2.0 + clearance + rail_thickness / 2.0
+    left_rail = make_rail(
+        center_x - rail_x,
+        center_y,
+        center_z,
+        size_x=rail_thickness,
+        size_y=slot_depth,
+        size_z=rail_height,
+    )
+    right_rail = make_rail(
+        center_x + rail_x,
+        center_y,
+        center_z,
+        size_x=rail_thickness,
+        size_y=slot_depth,
+        size_z=rail_height,
+    )
     return left_rail.union(right_rail)
 
 def make_rail(
     center_x,
     center_y,   
     center_z,
-    wall_thickness, 
-    slot_depth, 
-    wall_height
+    size_x,
+    size_y,
+    size_z,
 ):
-    rail_size = (wall_thickness, wall_height, slot_depth)
-
     return (
         cq.Workplane("XY")
-        .box(*rail_size)
+        .box(size_x, size_y, size_z)
         .translate((center_x, center_y, center_z))
     )
 
@@ -116,8 +130,8 @@ def add_slot(
     center_x,
     center_y,
     center_z,
-    wall_thickness,
-    wall_depth,
+    rail_thickness,
+    rail_height,
     clearance,
 ):
     """Add an upright charger-board slot aligned with the rear USB opening."""
@@ -129,8 +143,8 @@ def add_slot(
             center_x,
             center_y,
             center_z,
-            wall_thickness,
-            wall_depth,
+            rail_thickness,
+            rail_height,
             clearance,
         )
     )
@@ -254,25 +268,27 @@ def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 1
     if channel_length < 0:
         raise ValueError("full_screw_length is too short for insert + screw head")
 
-    # First how is for inset; and it starts at the Z location
-    insert_center_z = z_start
+    # First hole is the inset/recess for the brass heat-set insert.
+    inset_start_z = z_start
     hole = make_cylinder_hole(
         inset_diameter,
-        -inset_height,
+        inset_height,
         x,
         y,
-        insert_center_z,
+        inset_start_z,
+        z_direction=1,
     )
 
     # Next add a channel for screw:
-    channel_center_z = z_start + inset_height
+    channel_start_z = z_start + inset_height
     hole = hole.union(
         make_cylinder_hole(
             screw_channel_diameter,
-            -channel_length,
+            channel_length,
             x,
             y,
-            channel_center_z,
+            channel_start_z,
+            z_direction=1,
         )
     )
 
@@ -280,10 +296,11 @@ def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 1
     hole = hole.union(
         make_cylinder_hole(
             screw_head_diameter,
-            -(screw_head_height + screw_head_extra_depth),
+            screw_head_height + screw_head_extra_depth,
             x,
             y,
-            channel_center_z + channel_length,
+            channel_start_z + channel_length,
+            z_direction=1,
         )
     )
 
@@ -416,14 +433,24 @@ if include_modular_cartridge_hub:
         # Create battery container
         battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
         battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
-        battery_container_rail_long = make_rail(14, 26, 1, wall_thickness=2, slot_depth=20, wall_height=6)
-        battery_container_rail_short = make_rail(-15, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
+        battery_container_rail_long = make_rail(14, 26, 1, size_x=2, size_y=6, size_z=20)
+        battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z=6)
         first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
         # Battery management system board container
         bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
         first_half = first_half.union(bms_container_bottom)
-        first_half = add_slot(first_half, 19, 4, 6, 14, 1, 2, 20, charge_board_slot_clearance)
+        first_half = add_slot(
+            first_half,
+            board_width=19,
+            slot_depth=4,
+            center_x=6,
+            center_y=14,
+            center_z=1,
+            rail_thickness=2,
+            rail_height=20,
+            clearance=charge_board_slot_clearance,
+        )
 
         # Battery management system board mounting pegs
         bms_charger_pegs = make_horizontal_board_pegs(
@@ -443,8 +470,8 @@ if include_modular_cartridge_hub:
         # On/off switch:
         first_half = add_rear_charge_port(first_half, charge_port_height * .80,  charge_port_width, 25, -1, -10, cartridge_floor_thickness + 1)
         on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
-        on_off_rail_right = make_rail(30, -1, -6, wall_thickness=2, slot_depth=7, wall_height=15)
-        on_off_rail_left = make_rail(20, -1, -6, wall_thickness=2, slot_depth=7, wall_height=15)
+        on_off_rail_right = make_rail(30, -1, -6, size_x=2, size_y=15, size_z=7)
+        on_off_rail_left = make_rail(20, -1, -6, size_x=2, size_y=15, size_z=7)
         on_off_bottom = make_spanning_tray(25, -8.5, -6, tray_width=14, tray_thickness=2, depth=7)
         first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
 
@@ -495,8 +522,8 @@ show_debug(cutting_tool)
 # Preview and export
 # -----------------------------
 try:
-    show_object(first_half, name="steering_whee_bottom")
-    show_object(second_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_whee_top")
+    show_object(first_half, name="steering_wheel_bottom")
+    show_object(second_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_wheel_top")
 
     running_in_cq_editor = True
 except NameError:
