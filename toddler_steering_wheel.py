@@ -10,7 +10,7 @@ from cadquery import exporters
 # -----------------------------
 wheel_outer_diameter = 184.0
 wheel_inner_diameter = 118.0
-wheel_thickness = 16.0
+wheel_thickness = 18.0
 grip_roundover_radius = 7.0
 
 hub_diameter = 78.0
@@ -188,7 +188,7 @@ def make_rail(
     return (
         cq.Workplane("XY")
         .box(*rail_size)
-        .translate((center_x, center_y, center_z + (slot_depth / 2.0)))
+        .translate((center_x, center_y, center_z))
     )
 
 
@@ -200,7 +200,7 @@ def add_slot(
     center_y,
     center_z,
     wall_thickness,
-    wall_height,
+    wall_depth,
     clearance,
 ):
     """Add an upright charger-board slot aligned with the rear USB opening."""
@@ -213,7 +213,7 @@ def add_slot(
             center_y,
             center_z,
             wall_thickness,
-            wall_height,
+            wall_depth,
             clearance,
         )
     )
@@ -289,7 +289,7 @@ def make_horizontal_board_pegs(
 def make_spanning_tray(
     center_x,
     center_y,
-    floor_z,
+    center_z,
     tray_width,
     tray_thickness,
     depth
@@ -298,7 +298,7 @@ def make_spanning_tray(
     tray_outer = (
         cq.Workplane("XY")
         .box(tray_width, tray_thickness, depth)
-        .translate((center_x, center_y, floor_z + depth / 2.0))
+        .translate((center_x, center_y, center_z))
     )
 
     return tray_outer
@@ -341,57 +341,50 @@ def show_debug(object, name="debug_obj"):
         },
     )
 
-def make_screw_hole(x, y, z_start, full_screw_length):
+def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 10):
     """Create a stepped vertical screw/inset cutout starting at z_start."""
-    insert_diameter = 4.0
-    insert_height = 3.0
+    inset_diameter = 4.5
+    inset_height = 5.0
 
-    screw_channel_diameter = 2.1
-
-    screw_head_diameter = 5.0
+    screw_channel_diameter = 4
+    screw_head_diameter = 6.5
     screw_head_height = 2.5
-    screw_head_extra_depth = 5.0
 
-    channel_length = full_screw_length - insert_height - screw_head_height
+    channel_length = full_screw_length - inset_height - screw_head_height
 
     if channel_length < 0:
         raise ValueError("full_screw_length is too short for insert + screw head")
 
-    insert_center_z = z_start + insert_height / 2.0
-    channel_center_z = z_start + insert_height + channel_length / 2.0
-    head_center_z = (
-        z_start
-        + insert_height
-        + channel_length
-        + screw_head_height 
-        + (screw_head_extra_depth / 2.0)
-    )
-
+    # First how is for inset; and it starts at the Z location
+    insert_center_z = z_start
     hole = make_cylinder_hole(
-        insert_diameter,
-        insert_height,
+        inset_diameter,
+        -inset_height,
         x,
         y,
         insert_center_z,
     )
 
+    # Next add a channel for screw:
+    channel_center_z = z_start + inset_height
     hole = hole.union(
         make_cylinder_hole(
             screw_channel_diameter,
-            channel_length,
+            -channel_length,
             x,
             y,
             channel_center_z,
         )
     )
 
+    # Now add long channel for screw
     hole = hole.union(
         make_cylinder_hole(
             screw_head_diameter,
-            screw_head_height + screw_head_extra_depth,
+            -(screw_head_height + screw_head_extra_depth),
             x,
             y,
-            head_center_z,
+            channel_center_z + channel_length,
         )
     )
 
@@ -457,15 +450,15 @@ for i in range(spoke_count):
     )
 
     if i == 1 or i == 2:
-        
         inset_offset = spoke_center_offset + spoke_width + ((wheel_grip_width/2) * .2)
-        button_inset_hole = make_cylinder_hole(button_hold_diameter, -5, inset_offset, 0, spoke_thickness - 3).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        button_inset_hole = make_cylinder_hole(button_hold_diameter, wheel_thickness*.5, inset_offset, 0, 20).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        # show_debug(button_inset_hole)
         hex_prism = (
             cq.Workplane("XY")
             .polygon(6, 22.5)
-            .extrude(10)
-        ).rotate((0, 0, 0), (0, 0, 1), angle - 90).translate((inset_offset, 0, -spoke_thickness+15)).rotate((0, 0, 0), (0, 0, 1), angle - 90)
-        #show_debug(hex_prism)
+            .extrude(wheel_thickness*.5)
+        ).rotate((0, 0, 0), (0, 0, 1), angle - 90).translate((inset_offset, 0, wheel_thickness-16)).rotate((0, 0, 0), (0, 0, 1), angle - 90)
+        # show_debug(hex_prism)
         wiring_spoke = wiring_spoke.union(button_inset_hole).union(hex_prism)
     
     button_insets.append(wiring_spoke)
@@ -479,27 +472,33 @@ for button_inset in button_insets:
     result = result.cut(button_inset)
 
 # Make antenna compartment:
-antenna_compartment = cq.Workplane("XY").box(41, 22, 8).edges().fillet(1).translate((0, -spoke_center_offset-25, 8))
+antenna_compartment = cq.Workplane("XY").box(41, 22, 8).edges().fillet(1).translate((0, -spoke_center_offset-25, 7))
 # show_debug(antenna_compartment)
 result = result.cut(antenna_compartment)
 
 # Add screw holes
 
-screw_count = 4
-screw_length = 10
+screw_count = 3
+screw_length = 12
 
 for i in range(screw_count):
     angle = i * (360.0 / screw_count)
     screw = make_screw_hole(spoke_center_offset + 25, 0, -12.5, screw_length).rotate((0, 0, 0), (1, 0, 0), 180).rotate((0, 0, 0), (0, 0, 1), angle - 45)
     result = result.cut(screw)
-    show_debug(screw)
+    #show_debug(screw)
     
-
-
-
-
 cartridge_result = None
 cartridge_lid_result = None
+
+
+test_screw_block = (
+    cq.Workplane("XY")
+    .box(10, 10, 16)
+    .translate((0, 0, 6))
+)
+test_screw_block = test_screw_block.cut(make_screw_hole(0, 0, 0, screw_length)).translate((0, 125, 0))
+show_debug(test_screw_block)
+exporters.export(test_screw_block, "test_screw_block.stl")
 
 
 # -----------------------------
@@ -530,196 +529,74 @@ cartridge_component_trays = [
 ]
 
 if include_modular_cartridge_hub:
-    # print("Cutting keyed through-cartridge cavity...")
-    # front_cavity_cut = make_cylinder_with_flat(
-    #     cartridge_cavity_diameter,
-    #     cartridge_cavity_depth + 0.2,
-    #     cartridge_key_flat_depth + cartridge_fit_clearance,
-    #     cartridge_key_angle,
-    # ).translate((0, 0, hub_thickness - cartridge_cavity_depth))
-
+    # Create cylindrical cavity where we'll house electronics:
     cavity = (
         cq.Workplane("XY")
         .circle(cartridge_cavity_diameter / 2.0)
         .extrude(cartridge_cavity_depth)
         .translate((0, 0, -12 + hub_thickness - cartridge_cavity_depth))
     )
-
     result = result.cut(cavity)
     # show_debug(cavity)
 
-
+    # Split in half for printing, (will use screw holes to hold together)
     first_half, second_half = cut_in_half_z(result, 11)
-
-
-    print("Building starter cartridge shell...")
-    cartridge_outer = make_cylinder_with_flat(
-        cartridge_outer_diameter,
-        cartridge_height,
-        cartridge_key_flat_depth,
-        cartridge_key_angle,
-    )
-    inner_start_z = cartridge_floor_thickness
-    cartridge_inner = (
-        make_cylinder_with_flat(
-            cartridge_inner_diameter,
-            cartridge_inner_depth + 0.2,
-            cartridge_inner_key_flat_depth,
-            cartridge_key_angle,
-        )
-        .translate((0, 0, inner_start_z))
-    )
-    cartridge_result = cartridge_outer.cut(cartridge_inner)
-
-    cartridge_extension = make_cylinder_with_flat(
-        cartridge_rear_stop_diameter,
-        10,
-        10,
-        cartridge_key_angle,
-    ).faces("<Z").fillet(hub_roundover_radius).translate((0, 0, -10))
-
-
-
-    cartridge_result = cartridge_result.union(cartridge_extension)
-
-    cartridge_extension_cut = make_cylinder_with_flat(
-        cartridge_rear_stop_diameter - 5,
-        15,
-        cartridge_key_flat_depth + cartridge_fit_clearance + 3.30,
-        cartridge_key_angle,
-    ).translate((0, 0, hub_thickness-36))
-    cartridge_result = cartridge_result.cut(cartridge_extension_cut)
-
-    for button_inset in button_insets:
-        cartridge_result = cartridge_result.cut(button_inset)
-
 
     if include_internal_sensor_housing:
         
         battery_length_mm = 26
         battery_wall_offset = 18
 
-        # Battery wall:
-        battery_rail_short = make_rail(
-            center_x= battery_wall_offset - battery_length_mm - 2,
-            center_y=-20,
-            center_z=0, 
-            wall_thickness=2,
-            slot_depth=10,
-            wall_height=8
-        )
-        battery_rail_long = make_rail(
-            center_x=battery_wall_offset,
-            center_y=-20,
-            center_z=0, 
-            wall_thickness=2,
-            slot_depth=tray_depth,
-            wall_height=8
-        )
-        cartridge_result = cartridge_result.union(battery_rail_short).union(battery_rail_long)
+        # Create battery container
+        battery_container_top = make_spanning_tray(0, 30, 1, tray_width=36, tray_thickness=2, depth=20)
+        battery_container_bottom = make_spanning_tray(4, 23, 1, tray_width=38, tray_thickness=2, depth=20)
+        battery_container_rail_long = make_rail(13, 26, 1, wall_thickness=2, slot_depth=20, wall_height=6)
+        battery_container_rail_short = make_rail(-14, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
+        first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
-        shift_right = 9
-        shift_down = 7
-        shift_back = 11
 
-        # Battery management system board tray / battery cover
-        battery_tray = make_spanning_tray(
-            center_x=shift_right-6,
-            center_y=-17.0,
-            floor_z=cartridge_floor_thickness,
-            tray_width=36,
-            tray_thickness=2,
-            depth=tray_depth-5
-        )
 
-        cartridge_result = cartridge_result.union(battery_tray)
-
-        # Battery Charging port
-        cartridge_result = add_rear_charge_port(
-            cartridge_result,
-            charge_port_width - 1,
-            charge_port_height * .75,
-            charge_port_center_x + shift_right,
-            charge_port_center_y + shift_down - 0.5,
-            -10,
-            cartridge_floor_thickness + 1,
-        )
+        # Battery management system board container
+        bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
+        battery_rail_long = make_rail(13, 26, 0, wall_thickness=2, slot_depth=20, wall_height=6)
+        battery_rail_short = make_rail(-14, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
+        first_half = first_half.union(bms_container_bottom).union(battery_rail_long).union(battery_rail_short)
+        first_half = add_slot(first_half, 19, 4, 6, 14, 1, 2, 20, charge_board_slot_clearance)
 
         # Battery management system board mounting pegs
-        charger_pegs = make_horizontal_board_pegs(
-            center_x=charge_port_center_x + shift_right,
-            center_y=charge_port_center_y + shift_down,
-            center_z=cartridge_floor_thickness + 1.0,
+        bms_charger_pegs = make_horizontal_board_pegs(
+            center_x=6,
+            center_y=15,
+            center_z=0,
             spacing_x=14.0,
             spacing_z=15.0,
             peg_diameter=1.8,
             peg_length=4.0,
         )
-        cartridge_result = cartridge_result.union(charger_pegs)
+        first_half = first_half.union(bms_charger_pegs)
         
-        # Battery management system board slots (walls)
-        cartridge_result = add_slot(
-            cartridge_result,
-            charge_board_width,
-            charge_board_slot_height,
-            charge_port_center_x + shift_right,
-            charge_port_center_y + shift_down - 2,
-            cartridge_floor_thickness - 10,
-            charge_board_slot_wall_thickness,
-            19,
-            charge_board_slot_clearance,
-        )
+        # Battery Charging port
+        first_half = add_rear_charge_port(first_half, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, cartridge_floor_thickness + 1)
 
-        # BNO055 Sensor pegs
-        sensor_pegs = make_flat_board_pegs(
-            center_x=0,
-            center_y=3,
-            center_z=cartridge_floor_thickness - 11,
-            spacing_x=21.2,
-            spacing_y=15.0,
-            peg_diameter=1.8,
-            peg_length=4.0,
-        )
-        cartridge_result = cartridge_result.union(sensor_pegs)
+        # # BNO055 Sensor pegs
+        # sensor_pegs = make_flat_board_pegs(
+        #     center_x=0,
+        #     center_y=-2,
+        #     center_z=cartridge_floor_thickness - 11,
+        #     spacing_x=21.2,
+        #     spacing_y=15.0,
+        #     peg_diameter=1.8,
+        #     peg_length=4.0,
+        # )
+        # first_half = first_half.union(sensor_pegs)
 
-        xiao_down_shift = -3
-        xiao_back_shift = -11
 
         # XIAO MCU rear data port
-        cartridge_result = add_rear_charge_port(
-            cartridge_result,
-            charge_port_width,
-            charge_port_height * 0.6,
-            charge_port_center_x,
-            charge_port_center_y + 45 + xiao_down_shift,
-            xiao_back_shift,
-            cartridge_floor_thickness + 1,
-        )
-
-        # # XIAO MCU holder tray
-        mcu_tray = make_spanning_tray(
-            center_x= 0,
-            center_y=20.0 + xiao_down_shift,
-            floor_z=cartridge_floor_thickness + xiao_back_shift ,
-            tray_width=22,
-            tray_thickness=2,
-            depth=tray_depth
-        )
-
-        # XIAO MCU board slots (walls)
-        cartridge_result = add_slot(
-            cartridge_result,
-            charge_board_width - 1,
-            charge_board_slot_height,
-            charge_port_center_x,
-            charge_port_center_y+42+xiao_down_shift,
-            cartridge_floor_thickness + xiao_back_shift ,
-            charge_board_slot_wall_thickness,
-            charge_board_slot_depth - 3,
-            charge_board_slot_clearance,
-        )
-        cartridge_result = cartridge_result.union(mcu_tray)
-
+        first_half = add_rear_charge_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18, -10, cartridge_floor_thickness + 1)
+        
+        # XIAO MCU holder tray
+        mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
+        first_half = first_half.union(mcu_tray)
 
     print("Building starter cartridge lid...")
     lid_plate = (
@@ -838,12 +715,16 @@ try:
 #             name="cartridge_lid",
 #         )
 
-    show_object(first_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_whee_bottom")
-    show_object(second_half.translate((0, 0, 0)), name="steering_whee_top")
+    show_object(first_half, name="steering_whee_bottom")
+    show_object(second_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_whee_top")
 
     running_in_cq_editor = True
 except NameError:
     running_in_cq_editor = False
+
+
+exporters.export(first_half, "steering_wheel_back.stl")
+exporters.export(second_half, "steering_wheel_front.stl")
 
 print(f"Exporting {step_filename}...")
 exporters.export(result, step_filename)
