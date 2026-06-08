@@ -22,11 +22,10 @@ spoke_width = 20.0
 spoke_thickness = 14.0
 spoke_roundover_radius = 2.0
 
-# Modular hub with removable electronics cartridge
-include_modular_cartridge_hub = True
+# Split hub electronics cavity
 hub_rear_lip_thickness = 3.0
 cartridge_cavity_diameter = 62.4
-cartridge_floor_thickness = 2.4
+port_cut_depth = 2.4
 
 # -----------------------------
 # Derived values
@@ -40,8 +39,8 @@ spoke_center_offset = hub_radius + spoke_length / 2 - 4.0
 cartridge_cavity_depth = hub_thickness - hub_rear_lip_thickness
 
 
-def add_rear_charge_port(
-    cartridge,
+def cut_rectangular_port(
+    model,
     width,
     height,
     center_x,
@@ -49,13 +48,13 @@ def add_rear_charge_port(
     center_z,
     floor_thickness,
 ):
-    """Cut a rear-facing USB plug opening through the cartridge back cap."""
+    """Cut a rectangular access opening through a wall or floor."""
     port_cut = (
         cq.Workplane("XY")
         .box(width, height, floor_thickness + 0.6)
         .translate((center_x, center_y, center_z + (floor_thickness / 2.0)))
     )
-    return cartridge.cut(port_cut)
+    return model.cut(port_cut)
 
 
 def make_cylinder_hole(
@@ -124,7 +123,7 @@ def make_rail(
 
 
 def add_slot(
-    cartridge,
+    model,
     board_width,
     slot_depth,
     center_x,
@@ -134,9 +133,9 @@ def add_slot(
     rail_height,
     clearance,
 ):
-    """Add an upright charger-board slot aligned with the rear USB opening."""
-    print("Adding upright charger slot...")
-    return cartridge.union(
+    """Add an upright board slot."""
+    print("Adding upright board slot...")
+    return model.union(
         make_upright_board_slot(
             board_width,
             slot_depth,
@@ -404,96 +403,91 @@ for i in range(screw_count):
     #show_debug(screw)
     
 # -----------------------------
-# Modular cartridge hub
-# The wheel gets a keyed cavity from the back.
-# A separate starter cartridge shell is exported for iteration.
+# Split hub electronics cavity
+# The wheel gets a cylindrical electronics cavity, then the whole body is split
+# into printable front/back halves.
 # -----------------------------
-include_internal_sensor_housing = True
-
 charge_port_width = 9.5
 charge_port_height = 5.0
 charge_board_slot_clearance = 0.6
 
-if include_modular_cartridge_hub:
-    # Create cylindrical cavity where we'll house electronics:
-    cavity = (
-        cq.Workplane("XY")
-        .circle(cartridge_cavity_diameter / 2.0)
-        .extrude(cartridge_cavity_depth)
-        .translate((0, 0, -12 + hub_thickness - cartridge_cavity_depth))
-    )
-    result = result.cut(cavity)
-    # show_debug(cavity)
+# Create cylindrical cavity where we'll house electronics.
+cavity = (
+    cq.Workplane("XY")
+    .circle(cartridge_cavity_diameter / 2.0)
+    .extrude(cartridge_cavity_depth)
+    .translate((0, 0, -12 + hub_thickness - cartridge_cavity_depth))
+)
+result = result.cut(cavity)
+# show_debug(cavity)
 
-    # Split in half for printing, (will use screw holes to hold together)
-    first_half, second_half = cut_in_half_z(result, 11)
+# Split in half for printing, using screw holes to hold the halves together.
+first_half, second_half = cut_in_half_z(result, 11)
 
-    if include_internal_sensor_housing:
-        
-        # Create battery container
-        battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
-        battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
-        battery_container_rail_long = make_rail(14, 26, 1, size_x=2, size_y=6, size_z=20)
-        battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z=6)
-        first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
+# Create battery container
+battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
+battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
+battery_container_rail_long = make_rail(14, 26, 1, size_x=2, size_y=6, size_z=20)
+battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z=6)
+first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
-        # Battery management system board container
-        bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
-        first_half = first_half.union(bms_container_bottom)
-        first_half = add_slot(
-            first_half,
-            board_width=19,
-            slot_depth=4,
-            center_x=6,
-            center_y=14,
-            center_z=1,
-            rail_thickness=2,
-            rail_height=20,
-            clearance=charge_board_slot_clearance,
-        )
+# Battery management system board container
+bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
+first_half = first_half.union(bms_container_bottom)
+first_half = add_slot(
+    first_half,
+    board_width=19,
+    slot_depth=4,
+    center_x=6,
+    center_y=14,
+    center_z=1,
+    rail_thickness=2,
+    rail_height=20,
+    clearance=charge_board_slot_clearance,
+)
 
-        # Battery management system board mounting pegs
-        bms_charger_pegs = make_horizontal_board_pegs(
-            center_x=6,
-            center_y=15,
-            center_z=0,
-            spacing_x=14.0,
-            spacing_z=15.0,
-            peg_diameter=1.8,
-            peg_length=4.0,
-        )
-        first_half = first_half.union(bms_charger_pegs)
-        
-        # Battery Charging port
-        first_half = add_rear_charge_port(first_half, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, cartridge_floor_thickness + 1)
+# Battery management system board mounting pegs
+bms_charger_pegs = make_horizontal_board_pegs(
+    center_x=6,
+    center_y=15,
+    center_z=0,
+    spacing_x=14.0,
+    spacing_z=15.0,
+    peg_diameter=1.8,
+    peg_length=4.0,
+)
+first_half = first_half.union(bms_charger_pegs)
 
-        # On/off switch:
-        first_half = add_rear_charge_port(first_half, charge_port_height * .80,  charge_port_width, 25, -1, -10, cartridge_floor_thickness + 1)
-        on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
-        on_off_rail_right = make_rail(30, -1, -6, size_x=2, size_y=15, size_z=7)
-        on_off_rail_left = make_rail(20, -1, -6, size_x=2, size_y=15, size_z=7)
-        on_off_bottom = make_spanning_tray(25, -8.5, -6, tray_width=14, tray_thickness=2, depth=7)
-        first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
+# Battery Charging port
+first_half = cut_rectangular_port(first_half, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, port_cut_depth + 1)
 
-        # # BNO055 Sensor pegs
-        # sensor_pegs = make_flat_board_pegs(
-        #     center_x=0,
-        #     center_y=-2,
-        #     center_z=cartridge_floor_thickness - 11,
-        #     spacing_x=21.2,
-        #     spacing_y=15.0,
-        #     peg_diameter=1.8,
-        #     peg_length=4.0,
-        # )
-        # first_half = first_half.union(sensor_pegs)
+# On/off switch:
+first_half = cut_rectangular_port(first_half, charge_port_height * .80, charge_port_width, 25, -1, -10, port_cut_depth + 1)
+on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
+on_off_rail_right = make_rail(30, -1, -6, size_x=2, size_y=15, size_z=7)
+on_off_rail_left = make_rail(20, -1, -6, size_x=2, size_y=15, size_z=7)
+on_off_bottom = make_spanning_tray(25, -8.5, -6, tray_width=14, tray_thickness=2, depth=7)
+first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
+
+# # BNO055 Sensor pegs
+# sensor_pegs = make_flat_board_pegs(
+#     center_x=0,
+#     center_y=-2,
+#     center_z=port_cut_depth - 11,
+#     spacing_x=21.2,
+#     spacing_y=15.0,
+#     peg_diameter=1.8,
+#     peg_length=4.0,
+# )
+# first_half = first_half.union(sensor_pegs)
 
 
-        # XIAO MCU rear data port
-        first_half = add_rear_charge_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, cartridge_floor_thickness + 1)
-        
-        # XIAO MCU holder tray
-        mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
-        first_half = first_half.union(mcu_tray)
+# XIAO MCU rear data port
+first_half = cut_rectangular_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, port_cut_depth + 1)
+
+# XIAO MCU holder tray
+mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
+first_half = first_half.union(mcu_tray)
 
 
 cutting_tool = (
