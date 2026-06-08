@@ -25,27 +25,10 @@ spoke_roundover_radius = 2.0
 # Modular hub with removable electronics cartridge
 include_modular_cartridge_hub = True
 hub_rear_lip_thickness = 3.0
-hub_rear_lip_radial_width = 3.0
-cartridge_outer_diameter = 62.0
-cartridge_fit_clearance = 0.20
+cartridge_cavity_diameter = 62.4
 cartridge_key_flat_depth = 6.0
 cartridge_key_angle = -90.0
 cartridge_floor_thickness = 2.4
-cartridge_wall_thickness = 2.4
-cartridge_has_front_cap = False
-cartridge_front_face_thickness = 2.4
-cartridge_lid_thickness = 2.4
-cartridge_lid_overlap_depth = 3.0
-cartridge_lid_clearance = 0.15
-
-# Export filenames
-step_filename = "toddler_steering_wheel.step"
-stl_filename = "toddler_steering_wheel.stl"
-cartridge_step_filename = "toddler_steering_wheel_cartridge.step"
-cartridge_stl_filename = "toddler_steering_wheel_cartridge.stl"
-cartridge_lid_step_filename = "toddler_steering_wheel_cartridge_lid.step"
-cartridge_lid_stl_filename = "toddler_steering_wheel_cartridge_lid.stl"
-
 
 # -----------------------------
 # Derived values
@@ -56,44 +39,7 @@ hub_radius = hub_diameter / 2
 
 spoke_length = inner_radius - hub_radius + 8.0
 spoke_center_offset = hub_radius + spoke_length / 2 - 4.0
-cartridge_cavity_diameter = cartridge_outer_diameter + 2.0 * cartridge_fit_clearance
-cartridge_rear_stop_diameter = cartridge_outer_diameter - 2.0 * hub_rear_lip_radial_width
 cartridge_cavity_depth = hub_thickness - hub_rear_lip_thickness
-cartridge_height = cartridge_cavity_depth - cartridge_fit_clearance
-cartridge_inner_diameter = cartridge_outer_diameter - 2.0 * cartridge_wall_thickness
-cartridge_inner_key_flat_depth = cartridge_key_flat_depth
-cartridge_inner_depth = max(
-    cartridge_height
-    - cartridge_floor_thickness
-    - (cartridge_front_face_thickness if cartridge_has_front_cap else 0.0),
-    4.0,
-)
-cartridge_lid_insert_diameter = (
-    cartridge_inner_diameter - 2.0 * cartridge_lid_clearance
-)
-cartridge_lid_insert_flat_depth = cartridge_key_flat_depth
-cartridge_lid_insert_depth = min(
-    max(cartridge_lid_overlap_depth, 1.5),
-    cartridge_inner_depth - 0.5,
-)
-
-
-def make_cylinder_with_flat(diameter, height, flat_depth, angle=90.0):
-    """Create a cylinder with one flat to key its rotational orientation."""
-    radius = diameter / 2.0
-    solid = cq.Workplane("XY").circle(radius).extrude(height)
-
-    if flat_depth <= 0:
-        return solid
-
-    flat_line_y = radius - flat_depth
-    cutter = (
-        cq.Workplane("XY")
-        .box(diameter * 3.0, diameter * 2.0, height + 2.0)
-        .translate((0, flat_line_y + diameter, height / 2.0))
-    )
-    keyed = solid.cut(cutter)
-    return keyed.rotate((0, 0, 0), (0, 0, 1), angle - 90.0)
 
 
 def add_rear_charge_port(
@@ -127,35 +73,6 @@ def make_cylinder_hole(
             .circle(diameter / 2.0)
             .extrude(-depth)
             .translate((center_x, center_y, center_z))
-    )
-
-
-def make_component_tray(
-    footprint_width,
-    footprint_height,
-    center_x,
-    center_y,
-    floor_z,
-    wall_thickness,
-    wall_height,
-    clearance,
-):
-    """Create a low retaining wall around a rectangular component footprint."""
-    inner_width = footprint_width + 2.0 * clearance
-    inner_height = footprint_height + 2.0 * clearance
-    outer_width = inner_width + 2.0 * wall_thickness
-    outer_height = inner_height + 2.0 * wall_thickness
-
-    tray = cq.Workplane("XY").box(outer_width, outer_height, wall_height)
-    center_cut = cq.Workplane("XY").box(
-        inner_width,
-        inner_height,
-        wall_height + 0.4,
-    )
-
-    return (
-        tray.cut(center_cut)
-        .translate((center_x, center_y, floor_z + wall_height / 2.0))
     )
 
 
@@ -303,27 +220,6 @@ def make_spanning_tray(
 
     return tray_outer
 
-def make_diameter_spanning_tray(
-    center_y,
-    floor_z,
-    inner_diameter,
-    tray_depth,
-    wall_thickness,
-    wall_height,
-    side_clearance=0,
-):
-    """Create a tray whose width spans the cartridge's inner diameter at center_y."""
-    inner_radius = inner_diameter / 2.0
-
-    # Chord width of the circle at this Y position.
-    usable_half_width = (inner_radius**2 - center_y**2) ** 0.5
-    tray_width = max(usable_half_width * 2.0 - 2.0 * side_clearance, 0.0)
-
-    width = tray_width + 2.0 * wall_thickness
-    depth = tray_depth - 2.0 * wall_thickness
-
-    return make_spanning_tray(0, center_y, floor_z, width, wall_height, depth)
-
 def cut_in_half_z(model, z_cut_location):
     cutter = cq.Workplane("XY").box(1000, 1000, 1000)
     lower_half = model.cut(cutter.translate((0, 0, z_cut_location + 500)))
@@ -332,14 +228,17 @@ def cut_in_half_z(model, z_cut_location):
 
 
 def show_debug(object, name="debug_obj"):
-    show_object(
-        object,
-        name=name,
-        options={
-            "color": (255, 0, 0),
-            "alpha": 0.25,
-        },
-    )
+    try:
+        show_object(
+            object,
+            name=name,
+            options={
+                "color": (255, 0, 0),
+                "alpha": 0.25,
+            },
+        )
+    except NameError:
+        pass
 
 def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 10):
     """Create a stepped vertical screw/inset cutout starting at z_start."""
@@ -487,10 +386,6 @@ for i in range(screw_count):
     result = result.cut(screw)
     #show_debug(screw)
     
-cartridge_result = None
-cartridge_lid_result = None
-
-
 # -----------------------------
 # Modular cartridge hub
 # The wheel gets a keyed cavity from the back.
@@ -500,23 +395,7 @@ include_internal_sensor_housing = True
 
 charge_port_width = 9.5
 charge_port_height = 5.0
-charge_port_center_y = -20.0
-charge_port_center_x = 0.0
-tray_depth = 20.0
-
-charge_board_width = 19.0
-charge_board_slot_depth = 21.0
-charge_board_slot_height = 5.0
-charge_board_slot_wall_thickness = 1.0
 charge_board_slot_clearance = 0.6
-
-component_tray_wall_thickness = 0.8
-component_tray_wall_height = 2.2
-component_tray_clearance = 0.75
-cartridge_component_trays = [
-    # Sizes are rough keep-out footprints with clearance, not exact CAD models.
-    {"name": "lipo_150mah", "width": 26.5, "height": 20.5, "x": 0.0, "y": 13.0},
-]
 
 if include_modular_cartridge_hub:
     # Create cylindrical cavity where we'll house electronics:
@@ -534,9 +413,6 @@ if include_modular_cartridge_hub:
 
     if include_internal_sensor_housing:
         
-        battery_length_mm = 26
-        battery_wall_offset = 18
-
         # Create battery container
         battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
         battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
@@ -566,10 +442,10 @@ if include_modular_cartridge_hub:
 
         # On/off switch:
         first_half = add_rear_charge_port(first_half, charge_port_height * .80,  charge_port_width, 25, -1, -10, cartridge_floor_thickness + 1)
-        on_off_top = make_spanning_tray(25, 7, -7, tray_width=14, tray_thickness=2, depth=7)
-        on_off_rail_right = make_rail(30, -1, -7, wall_thickness=2, slot_depth=7, wall_height=15)
-        on_off_rail_left = make_rail(20, -1, -7, wall_thickness=2, slot_depth=7, wall_height=15)
-        on_off_bottom = make_spanning_tray(25, -8.5, -7, tray_width=14, tray_thickness=2, depth=7)
+        on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
+        on_off_rail_right = make_rail(30, -1, -6, wall_thickness=2, slot_depth=7, wall_height=15)
+        on_off_rail_left = make_rail(20, -1, -6, wall_thickness=2, slot_depth=7, wall_height=15)
+        on_off_bottom = make_spanning_tray(25, -8.5, -6, tray_width=14, tray_thickness=2, depth=7)
         first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
 
         # # BNO055 Sensor pegs
