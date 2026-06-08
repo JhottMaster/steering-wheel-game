@@ -491,16 +491,6 @@ cartridge_result = None
 cartridge_lid_result = None
 
 
-test_screw_block = (
-    cq.Workplane("XY")
-    .box(10, 10, 16)
-    .translate((0, 0, 6))
-)
-test_screw_block = test_screw_block.cut(make_screw_hole(0, 0, 0, screw_length)).translate((0, 125, 0))
-show_debug(test_screw_block)
-exporters.export(test_screw_block, "test_screw_block.stl")
-
-
 # -----------------------------
 # Modular cartridge hub
 # The wheel gets a keyed cavity from the back.
@@ -548,19 +538,15 @@ if include_modular_cartridge_hub:
         battery_wall_offset = 18
 
         # Create battery container
-        battery_container_top = make_spanning_tray(0, 30, 1, tray_width=36, tray_thickness=2, depth=20)
-        battery_container_bottom = make_spanning_tray(4, 23, 1, tray_width=38, tray_thickness=2, depth=20)
-        battery_container_rail_long = make_rail(13, 26, 1, wall_thickness=2, slot_depth=20, wall_height=6)
-        battery_container_rail_short = make_rail(-14, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
+        battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
+        battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
+        battery_container_rail_long = make_rail(14, 26, 1, wall_thickness=2, slot_depth=20, wall_height=6)
+        battery_container_rail_short = make_rail(-15, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
         first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
-
-
 
         # Battery management system board container
         bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
-        battery_rail_long = make_rail(13, 26, 0, wall_thickness=2, slot_depth=20, wall_height=6)
-        battery_rail_short = make_rail(-14, 26, -6, wall_thickness=2, slot_depth=6, wall_height=6)
-        first_half = first_half.union(bms_container_bottom).union(battery_rail_long).union(battery_rail_short)
+        first_half = first_half.union(bms_container_bottom)
         first_half = add_slot(first_half, 19, 4, 6, 14, 1, 2, 20, charge_board_slot_clearance)
 
         # Battery management system board mounting pegs
@@ -578,6 +564,14 @@ if include_modular_cartridge_hub:
         # Battery Charging port
         first_half = add_rear_charge_port(first_half, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, cartridge_floor_thickness + 1)
 
+        # On/off switch:
+        first_half = add_rear_charge_port(first_half, charge_port_height * .80,  charge_port_width, 25, -1, -10, cartridge_floor_thickness + 1)
+        on_off_top = make_spanning_tray(25, 7, -7, tray_width=14, tray_thickness=2, depth=7)
+        on_off_rail_right = make_rail(30, -1, -7, wall_thickness=2, slot_depth=7, wall_height=15)
+        on_off_rail_left = make_rail(20, -1, -7, wall_thickness=2, slot_depth=7, wall_height=15)
+        on_off_bottom = make_spanning_tray(25, -8.5, -7, tray_width=14, tray_thickness=2, depth=7)
+        first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
+
         # # BNO055 Sensor pegs
         # sensor_pegs = make_flat_board_pegs(
         #     center_x=0,
@@ -592,129 +586,39 @@ if include_modular_cartridge_hub:
 
 
         # XIAO MCU rear data port
-        first_half = add_rear_charge_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18, -10, cartridge_floor_thickness + 1)
+        first_half = add_rear_charge_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, cartridge_floor_thickness + 1)
         
         # XIAO MCU holder tray
         mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
         first_half = first_half.union(mcu_tray)
 
-    print("Building starter cartridge lid...")
-    lid_plate = (
-        cq.Workplane("XY")
-        .circle(cartridge_outer_diameter / 2.0)
-        .extrude(cartridge_lid_thickness)
-    )
-    lid_insert = make_cylinder_with_flat(
-        cartridge_lid_insert_diameter,
-        cartridge_lid_insert_depth,
-        cartridge_lid_insert_flat_depth,
-        cartridge_key_angle,
-    )
-    lid_insert = lid_insert.translate((0, 0, -cartridge_lid_insert_depth))
-    cartridge_lid_result = lid_plate.union(lid_insert)
 
-    # Add buttons
-    button_distance = 32
-    button_height = 5
-    cartridge_lid_result = cartridge_lid_result.cut(make_cylinder_hole(button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, -button_distance/2, button_height, cartridge_lid_thickness))
-    cartridge_lid_result = cartridge_lid_result.cut(make_cylinder_hole(button_hold_diameter, cartridge_lid_insert_depth + cartridge_lid_thickness, button_distance/2, button_height, cartridge_lid_thickness))
+cutting_tool = (
+    cq.Workplane("XY")
+    .box(200, 200, 20)
+).translate((0, 0, 9))
+test_cut_center = (
+    cq.Workplane("XY")
+    .circle(hub_radius*.9)
+    .extrude(hub_thickness)
+).translate((0, 0, -10))
+cutting_tool = cutting_tool.cut(test_cut_center)
+show_debug(cutting_tool)
 
-# -----------------------------
-# Rear electronics pocket
-# The wheel face is +Z. The pocket opens from the back side.
-# -----------------------------
-include_electronics_pocket = False
-pocket_width = 34.0
-pocket_height = 48.0
-pocket_depth = 10.0
-pocket_corner_radius = 4.0
-
-if include_electronics_pocket:
-    print("Cutting electronics pocket...")
-    pocket_cut = (
-        cq.Workplane("XY")
-        .rect(pocket_width, pocket_height)
-        .vertices()
-        .circle(pocket_corner_radius)
-        .extrude(pocket_depth)
-        .translate((0, 0, -0.1))
-    )
-
-    result = result.cut(pocket_cut)
-
-
-# -----------------------------
-# Shallow front inset showing electronics pocket footprint
-# This is useful for a no-support hand-feel prototype.
-# -----------------------------
-include_pocket_footprint_inset = False
-pocket_footprint_inset_depth = 1.2
-
-if include_pocket_footprint_inset:
-    print("Cutting pocket footprint inset...")
-    result = (
-        result.faces(">Z")
-        .workplane()
-        .rect(pocket_width, pocket_height)
-        .cutBlind(-pocket_footprint_inset_depth)
-    )
-
-
-# -----------------------------
-# Wire/sensor access hole through the hub
-# -----------------------------
-include_center_hole = False
-wire_hole_diameter = 8.0
-
-if include_center_hole:
-    print("Cutting center hole...")
-    result = result.faces(">Z").workplane().hole(wire_hole_diameter)
-
-
-# -----------------------------
-# Small mounting holes inside electronics pocket
-# -----------------------------
-include_mounting_holes = False
-mount_hole_spacing_x = 24.0
-mount_hole_spacing_y = 34.0
-mount_hole_diameter = 2.6
-mount_hole_depth = 7.0
-
-if include_mounting_holes:
-    print("Cutting mounting holes...")
-    mount_points = [
-        (-mount_hole_spacing_x / 2, -mount_hole_spacing_y / 2),
-        (mount_hole_spacing_x / 2, -mount_hole_spacing_y / 2),
-        (-mount_hole_spacing_x / 2, mount_hole_spacing_y / 2),
-        (mount_hole_spacing_x / 2, mount_hole_spacing_y / 2),
-    ]
-
-    for x, y in mount_points:
-        result = result.faces("<Z").workplane().center(x, y).hole(
-            mount_hole_diameter,
-            mount_hole_depth,
-        )
-
+# For printing quick prototypes testing screw fit
+# test_screw_block = (
+#     cq.Workplane("XY")
+#     .box(10, 10, 16)
+#     .translate((0, 0, 6))
+# )
+# test_screw_block = test_screw_block.cut(make_screw_hole(0, 0, 0, screw_length)).translate((0, 125, 0))
+# show_debug(test_screw_block)
+# exporters.export(test_screw_block, "test_screw_block.stl")
 
 # -----------------------------
 # Preview and export
 # -----------------------------
-preview_cartridge_y = -wheel_outer_diameter * .75
-preview_lid_y = preview_cartridge_y - cartridge_outer_diameter - 15
-
 try:
-#     show_object(result, name="steering_wheel")
-#     if cartridge_result is not None:
-#         show_object(
-#             cartridge_result.translate((0, preview_cartridge_y, 0)),
-#             name="electronics_cartridge",
-#         )
-#     if cartridge_lid_result is not None:
-#         show_object(
-#             cartridge_lid_result.translate((0, preview_lid_y, 0)),
-#             name="cartridge_lid",
-#         )
-
     show_object(first_half, name="steering_whee_bottom")
     show_object(second_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_whee_top")
 
@@ -725,22 +629,6 @@ except NameError:
 
 exporters.export(first_half, "steering_wheel_back.stl")
 exporters.export(second_half, "steering_wheel_front.stl")
-
-print(f"Exporting {step_filename}...")
-exporters.export(result, step_filename)
-print(f"Exporting {stl_filename}...")
-exporters.export(result, stl_filename)
-
-if cartridge_result is not None:
-    print(f"Exporting {cartridge_step_filename}...")
-    exporters.export(cartridge_result, cartridge_step_filename)
-    print(f"Exporting {cartridge_stl_filename}...")
-    exporters.export(cartridge_result, cartridge_stl_filename)
-if cartridge_lid_result is not None:
-    print(f"Exporting {cartridge_lid_step_filename}...")
-    exporters.export(cartridge_lid_result, cartridge_lid_step_filename)
-    print(f"Exporting {cartridge_lid_stl_filename}...")
-    exporters.export(cartridge_lid_result, cartridge_lid_stl_filename)
 
 print("Done.")
 
