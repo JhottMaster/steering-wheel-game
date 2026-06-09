@@ -393,7 +393,7 @@ result = result.cut(antenna_compartment)
 
 # Add screw holes
 
-screw_count = 3
+screw_count = 4
 screw_length = 12
 
 for i in range(screw_count):
@@ -422,20 +422,20 @@ result = result.cut(cavity)
 # show_debug(cavity)
 
 # Split in half for printing, using screw holes to hold the halves together.
-first_half, second_half = cut_in_half_z(result, 11)
+steering_wheel_back, steering_wheel_front = cut_in_half_z(result, 11)
 
 # Create battery container
-battery_container_top = make_spanning_tray(0, 29, 1, tray_width=36, tray_thickness=2, depth=20)
+battery_container_top = make_spanning_tray(0, 28.5, 1, tray_width=36, tray_thickness=2, depth=20)
 battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
 battery_container_rail_long = make_rail(14, 26, 1, size_x=2, size_y=6, size_z=20)
 battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z=6)
-first_half = first_half.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
+steering_wheel_back = steering_wheel_back.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
 # Battery management system board container
 bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
-first_half = first_half.union(bms_container_bottom)
-first_half = add_slot(
-    first_half,
+steering_wheel_back = steering_wheel_back.union(bms_container_bottom)
+steering_wheel_back = add_slot(
+    steering_wheel_back,
     board_width=19,
     slot_depth=4,
     center_x=6,
@@ -456,51 +456,69 @@ bms_charger_pegs = make_horizontal_board_pegs(
     peg_diameter=1.8,
     peg_length=4.0,
 )
-first_half = first_half.union(bms_charger_pegs)
+# steering_wheel_back = steering_wheel_back.union(bms_charger_pegs)
 
 # Battery Charging port
-first_half = cut_rectangular_port(first_half, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, port_cut_depth + 1)
 
 # On/off switch:
-first_half = cut_rectangular_port(first_half, charge_port_height * .80, charge_port_width, 25, -1, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_height * .80, charge_port_width, 25, -1, -10, port_cut_depth + 1)
 on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
-on_off_rail_right = make_rail(30, -1, -6, size_x=2, size_y=15, size_z=7)
-on_off_rail_left = make_rail(20, -1, -6, size_x=2, size_y=15, size_z=7)
-on_off_bottom = make_spanning_tray(25, -8.5, -6, tray_width=14, tray_thickness=2, depth=7)
-first_half = first_half.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
+on_off_rail_right = make_rail(29.5, -1, -6, size_x=2, size_y=15, size_z=7)
+on_off_rail_left = make_rail(20.5, -1, -6, size_x=2, size_y=15, size_z=7)
+on_off_bottom = make_spanning_tray(25, -8, -6, tray_width=14, tray_thickness=2, depth=7)
+steering_wheel_back = steering_wheel_back.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
 
-# # BNO055 Sensor pegs
-# sensor_pegs = make_flat_board_pegs(
-#     center_x=0,
-#     center_y=-2,
-#     center_z=port_cut_depth - 11,
-#     spacing_x=21.2,
-#     spacing_y=15.0,
-#     peg_diameter=1.8,
-#     peg_length=4.0,
-# )
-# first_half = first_half.union(sensor_pegs)
+# BNO055 Sensor pegs
+sensor_pegs = make_flat_board_pegs(
+    center_x=0,
+    center_y=-2,
+    center_z=port_cut_depth - 12,
+    spacing_x=21.2,
+    spacing_y=15.0,
+    peg_diameter=1.8,
+    peg_length=4.0,
+)
+steering_wheel_back = steering_wheel_back.union(sensor_pegs)
 
 
 # XIAO MCU rear data port
-first_half = cut_rectangular_port(first_half, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, port_cut_depth + 1)
 
-# XIAO MCU holder tray
+# XIAO MCU holder tray with wire channel
 mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
-first_half = first_half.union(mcu_tray)
+mcu_wire_channel = cq.Workplane("XY").circle(3).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((1, -25, 0))
+mcu_tray = mcu_tray.cut(mcu_wire_channel)
+steering_wheel_back = steering_wheel_back.union(mcu_tray)
 
 
 cutting_tool = (
     cq.Workplane("XY")
-    .box(200, 200, 20)
+    .box(400, 400, 20)
 ).translate((0, 0, 9))
+
 test_cut_center = (
     cq.Workplane("XY")
     .circle(hub_radius*.9)
     .extrude(hub_thickness)
 ).translate((0, 0, -10))
 cutting_tool = cutting_tool.cut(test_cut_center)
-show_debug(cutting_tool)
+
+distance = 55
+four_boxes = (
+    cq.Workplane("XY")
+    .rect(distance, distance)
+    .vertices()
+    .box(10, 10, 20)
+).translate((0, 0, 9))
+cutting_tool = cutting_tool.union(four_boxes)
+# show_debug(cutting_tool, name="cutting tool")
+
+smaller_cutting_tool = cutting_tool.val().scale(0.995)
+# show_debug(smaller_cutting_tool, name="cutting tool smaller")
+
+center_hub = steering_wheel_back.cut(smaller_cutting_tool)
+steering_wheel_back = steering_wheel_back.intersect(cutting_tool)
 
 # For printing quick prototypes testing screw fit
 # test_screw_block = (
@@ -516,16 +534,18 @@ show_debug(cutting_tool)
 # Preview and export
 # -----------------------------
 try:
-    show_object(first_half, name="steering_wheel_bottom")
-    show_object(second_half.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_wheel_top")
+    show_object(center_hub.translate((-wheel_outer_diameter + 40, 0, 0)), name="center_hub")
+    show_object(steering_wheel_back, name="steering_wheel_back")
+    show_object(steering_wheel_front.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_wheel_front")
 
     running_in_cq_editor = True
 except NameError:
     running_in_cq_editor = False
 
 
-exporters.export(first_half, "steering_wheel_back.stl")
-exporters.export(second_half, "steering_wheel_front.stl")
+exporters.export(steering_wheel_back, "steering_wheel_back.stl")
+exporters.export(steering_wheel_front, "steering_wheel_front.stl")
+exporters.export(center_hub, "center_hub.stl")
 
 print("Done.")
 
