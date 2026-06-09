@@ -342,7 +342,6 @@ spokes = cq.Workplane("XY")
 wheel_grip_width = wheel_outer_diameter - wheel_inner_diameter
 button_hold_diameter = 16
 button_insets = []
-
 for i in range(spoke_count):
     angle = i * (360.0 / spoke_count)
 
@@ -517,6 +516,22 @@ cutting_tool = cutting_tool.union(four_boxes)
 smaller_cutting_tool = cutting_tool.val().scale(0.995)
 # show_debug(smaller_cutting_tool, name="cutting tool smaller")
 
+locking_holes = cq.Workplane("XY")
+locking_hole_count = 2
+for i in range(locking_hole_count):
+    angle = i * (360.0 / locking_hole_count)
+    lock_spoke = (
+        cq.Workplane("YZ")
+            .circle(spoke_width / 7)
+            .extrude(7)
+            .translate((30, 0, spoke_thickness / 2 - 2))
+            .rotate((0, 0, 0), (0, 0, 1), angle)
+    )
+    locking_holes = locking_holes.union(lock_spoke)
+
+# show_debug(locking_holes)
+steering_wheel_back = steering_wheel_back.cut(locking_holes)
+
 center_hub = steering_wheel_back.cut(smaller_cutting_tool)
 steering_wheel_back = steering_wheel_back.intersect(cutting_tool)
 
@@ -533,10 +548,12 @@ steering_wheel_back = steering_wheel_back.intersect(cutting_tool)
 # -----------------------------
 # Preview and export
 # -----------------------------
+offset_center_hub = -wheel_outer_diameter + 40
+offset_wheel_front = wheel_outer_diameter + 10
 try:
-    show_object(center_hub.translate((-wheel_outer_diameter + 40, 0, 0)), name="center_hub")
+    show_object(center_hub.translate((offset_center_hub, 0, 0)), name="center_hub")
     show_object(steering_wheel_back, name="steering_wheel_back")
-    show_object(steering_wheel_front.translate((wheel_outer_diameter + 10, 0, 0)), name="steering_wheel_front")
+    show_object(steering_wheel_front.translate((offset_wheel_front, 0, 0)), name="steering_wheel_front")
 
     running_in_cq_editor = True
 except NameError:
