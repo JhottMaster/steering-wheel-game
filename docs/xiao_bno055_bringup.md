@@ -31,6 +31,20 @@ Notes:
 - The Adafruit BNO055 breakout accepts `3.3V` on `VIN`, so powering it from the XIAO `3V3` pin is fine.
 - Keep the wires short for the first test. The BNO055 can be fussy on `I2C`.
 
+Extra controller I/O for the current UDP POC:
+
+| Function | XIAO ESP32-C3 | Wiring |
+| --- | --- | --- |
+| `button1` | `D1` | button to `GND`, firmware uses `INPUT_PULLUP` |
+| `button2` | `D2` | button to `GND`, firmware uses `INPUT_PULLUP` |
+| status LED | `D10` | `D10` -> resistor -> LED -> `GND` |
+
+Status LED behavior:
+
+- slow breathing: setup is still in progress, including startup delay, BNO055 init, or Wi-Fi connection
+- solid: runtime is healthy and the controller has started transmitting data
+- fast flash: error state, such as BNO055 not detected or UDP/Wi-Fi send trouble
+
 ## Arduino IDE Setup
 
 Use the current `Arduino IDE 2.x`.

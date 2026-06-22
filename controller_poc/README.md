@@ -9,10 +9,11 @@ Minimal `raylib` app that listens for steering sensor data over `UDP` and visual
 - expects packets like:
 
 ```text
-roll=12.4,pitch=-3.1,heading=182.0
+roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 ```
 
 - renders a steering wheel that turns with reversed `pitch` by default
+- displays the latest two button states from the controller
 - falls back to keyboard input if no recent packets arrive
 
 ## Controls

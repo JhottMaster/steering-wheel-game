@@ -60,6 +60,8 @@ struct SensorFrame {
   float roll = 0.0f;
   float pitch = 0.0f;
   float heading = 0.0f;
+  bool button1Pressed = false;
+  bool button2Pressed = false;
 };
 
 struct UdpReceiver {
@@ -133,13 +135,20 @@ bool ParsePacket(const char* packet, SensorFrame* frame) {
   float roll = 0.0f;
   float pitch = 0.0f;
   float heading = 0.0f;
-  if (std::sscanf(packet, "roll=%f,pitch=%f,heading=%f", &roll, &pitch, &heading) != 3) {
+  int button1 = 0;
+  int button2 = 0;
+  const int parsed =
+      std::sscanf(packet, "roll=%f,pitch=%f,heading=%f,button1=%d,button2=%d",
+                  &roll, &pitch, &heading, &button1, &button2);
+  if (parsed < 3) {
     return false;
   }
 
   frame->roll = roll;
   frame->pitch = pitch;
   frame->heading = heading;
+  frame->button1Pressed = parsed >= 4 && button1 != 0;
+  frame->button2Pressed = parsed >= 5 && button2 != 0;
   return true;
 }
 
@@ -380,6 +389,10 @@ int main() {
              Color{46, 72, 88, 255});
     DrawText(TextFormat("steering angle: %.1f deg   normalized: %.2f", steeringAngleDeg, normalizedValue), 40, screenHeight - 54, 24,
              Color{46, 72, 88, 255});
+    DrawText(TextFormat("buttons: 1=%s  2=%s",
+                        lastGoodFrame.button1Pressed ? "pressed" : "up",
+                        lastGoodFrame.button2Pressed ? "pressed" : "up"),
+             40, screenHeight - 22, 20, Color{46, 72, 88, 255});
 
     const char* inputMode = hasFreshPackets
                                 ? "UDP sensor stream active"

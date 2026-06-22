@@ -28,7 +28,7 @@ Show a 2D steering wheel on screen that rotates with reversed `pitch` from the B
 Packet format:
 
 ```text
-roll=12.4,pitch=-3.1,heading=182.0
+roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 ```
 
 The current working firmware only sends when the orientation changes enough to matter, rather than streaming every frame while stationary.
@@ -62,8 +62,27 @@ Important note:
 - `R` uses `roll` for debug comparison
 - `SPACE` captures the current sensor orientation as the center, so switching between `roll` and `pitch` stays calibrated
 - `A` / `D` or left / right arrows provide a keyboard fallback when packets are not arriving
+- the app displays the latest `button1` / `button2` states from UDP packets
 - the app shows the host IPv4 address in the window so it is easy to copy into `wifi_secrets.h`
 - the app keeps the last received value on screen even if packets go stale
+
+## Controller GPIO
+
+The current XIAO ESP32-C3 firmware uses:
+
+| Function | XIAO pin | Wiring |
+| --- | --- | --- |
+| `BNO055 SDA` | `D4` | sensor `SDA` |
+| `BNO055 SCL` | `D5` | sensor `SCL` |
+| `button1` | `D1` | button to `GND`, uses `INPUT_PULLUP` |
+| `button2` | `D2` | button to `GND`, uses `INPUT_PULLUP` |
+| status LED | `D10` | GPIO -> resistor -> LED -> `GND` |
+
+Status LED states:
+
+- slow breathing: setup is still in progress
+- solid: runtime is healthy and data transmission has started
+- fast flash: error state
 
 ## Build Notes
 
