@@ -9,7 +9,7 @@ This proof of concept connects the current hardware bring-up to a very small cro
 
 ## Goal
 
-Show a centered 2D bar on screen that follows either the `roll` or `pitch` reported by the BNO055.
+Show a 2D steering wheel on screen that rotates with reversed `pitch` from the BNO055.
 
 ## Repo Layout
 
@@ -23,7 +23,7 @@ Show a centered 2D bar on screen that follows either the `roll` or `pitch` repor
 1. The XIAO reads fused orientation data from the BNO055.
 2. The XIAO sends packets over Wi-Fi using `UDP`.
 3. The `raylib` app listens on port `4210`.
-4. The app moves a horizontal bar based on incoming `roll` or `pitch`.
+4. The app rotates an on-screen steering wheel based on incoming `pitch`.
 
 Packet format:
 
@@ -58,9 +58,9 @@ Important note:
 
 ## Desktop App Behavior
 
-- `R` displays `roll`
-- `P` displays `pitch`
-- `SPACE` centers the current value
+- `P` uses `pitch` for steering
+- `R` uses `roll` for debug comparison
+- `SPACE` captures the current sensor orientation as the center, so switching between `roll` and `pitch` stays calibrated
 - `A` / `D` or left / right arrows provide a keyboard fallback when packets are not arriving
 - the app shows the host IPv4 address in the window so it is easy to copy into `wifi_secrets.h`
 - the app keeps the last received value on screen even if packets go stale

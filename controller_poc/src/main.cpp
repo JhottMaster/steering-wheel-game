@@ -48,6 +48,8 @@ constexpr int kUdpPort = 4210;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
 constexpr float kPacketTimeoutSeconds = 2.0f;
+constexpr float kDegToRad = 0.017453292519943295769f;
+constexpr float kSteeringDirection = -1.0f;
 
 enum class DisplayAxis {
   kRoll,
@@ -195,6 +197,37 @@ float ClampToUnit(float value) {
   return std::clamp(value, -1.0f, 1.0f);
 }
 
+Vector2 PointOnCircle(Vector2 center, float radius, float angleDeg) {
+  const float radians = angleDeg * kDegToRad;
+  return Vector2{center.x + std::cos(radians) * radius,
+                 center.y + std::sin(radians) * radius};
+}
+
+void DrawSteeringWheel(Vector2 center, float radius, float rotationDeg) {
+  const Color rimColor = Color{46, 72, 88, 255};
+  const Color spokeColor = Color{77, 92, 103, 255};
+  const Color accentColor = Color{184, 72, 49, 255};
+  const Color shadowColor = Color{214, 209, 196, 255};
+  const Color hubColor = Color{242, 239, 228, 255};
+
+  DrawCircleV(Vector2{center.x + 5.0f, center.y + 7.0f}, radius + 6.0f, shadowColor);
+  DrawRing(center, radius * 0.76f, radius, 0.0f, 360.0f, 96, rimColor);
+  DrawRing(center, radius * 0.56f, radius * 0.62f, 0.0f, 360.0f, 96,
+           Color{204, 211, 214, 255});
+
+  for (int i = 0; i < 3; ++i) {
+    const float spokeAngleDeg = rotationDeg - 90.0f + static_cast<float>(i) * 120.0f;
+    DrawLineEx(PointOnCircle(center, radius * 0.20f, spokeAngleDeg),
+               PointOnCircle(center, radius * 0.70f, spokeAngleDeg), radius * 0.09f,
+               spokeColor);
+  }
+
+  DrawCircleV(center, radius * 0.24f, rimColor);
+  DrawCircleV(center, radius * 0.14f, hubColor);
+  DrawCircleV(PointOnCircle(center, radius * 0.87f, rotationDeg - 90.0f), radius * 0.075f,
+              accentColor);
+}
+
 std::vector<std::string> GetLocalIpv4Addresses() {
   std::vector<std::string> addresses;
 
@@ -271,9 +304,10 @@ int main() {
 
   SensorFrame latestFrame;
   SensorFrame lastGoodFrame;
+  SensorFrame centerFrame;
   auto lastPacketTime = std::chrono::steady_clock::time_point{};
-  DisplayAxis displayAxis = DisplayAxis::kRoll;
-  float calibrationOffsetDeg = 0.0f;
+  DisplayAxis displayAxis = DisplayAxis::kPitch;
+  bool hasCenterFrame = false;
   float manualAngleDeg = 0.0f;
 
   while (!WindowShouldClose()) {
@@ -301,46 +335,42 @@ int main() {
     const float secondsSincePacket =
         std::chrono::duration<float>(now - lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
+    const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
 
     float sourceAngleDeg = GetAxisDegrees(displayAxis, lastGoodFrame);
-    if (!hasFreshPackets && lastPacketTime == std::chrono::steady_clock::time_point{}) {
+    if (!hasFreshPackets && !hasAnyPacket) {
       sourceAngleDeg = manualAngleDeg;
     }
     if (IsKeyPressed(KEY_SPACE)) {
-      calibrationOffsetDeg = sourceAngleDeg;
-      if (!hasFreshPackets && lastPacketTime == std::chrono::steady_clock::time_point{}) {
+      if (hasAnyPacket) {
+        centerFrame = lastGoodFrame;
+        hasCenterFrame = true;
+      } else {
         manualAngleDeg = 0.0f;
+        centerFrame = SensorFrame{};
+        hasCenterFrame = true;
       }
     }
 
+    const float calibrationOffsetDeg =
+        hasCenterFrame ? GetAxisDegrees(displayAxis, centerFrame) : 0.0f;
     const float centeredAngleDeg = sourceAngleDeg - calibrationOffsetDeg;
-    const float normalizedValue = ClampToUnit(centeredAngleDeg / kVisibleAngleRangeDeg);
+    const float steeringAngleDeg = centeredAngleDeg * kSteeringDirection;
+    const float normalizedValue = ClampToUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
     const int screenWidth = GetScreenWidth();
     const int screenHeight = GetScreenHeight();
-    const Vector2 center = {screenWidth * 0.5f, screenHeight * 0.5f};
-    const float trackWidth = screenWidth * 0.70f;
-    const float trackHeight = 18.0f;
-    const float barWidth = 110.0f;
-    const float sliderTravel = (trackWidth - barWidth) * 0.5f;
-    const float sliderCenterX = center.x + normalizedValue * sliderTravel;
+    const Vector2 center = {screenWidth * 0.5f, screenHeight * 0.52f};
+    const float wheelRadius = std::min(screenWidth, screenHeight) * 0.28f;
 
     BeginDrawing();
     ClearBackground(Color{242, 239, 228, 255});
 
     DrawText("Toddler Steering Wheel POC", 40, 28, 34, Color{46, 72, 88, 255});
-    DrawText("R: roll   P: pitch   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
+    DrawText("P: pitch steering   R: roll debug   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
              Color{77, 92, 103, 255});
 
-    DrawRectangleRounded(
-        Rectangle{center.x - trackWidth * 0.5f, center.y - trackHeight * 0.5f, trackWidth,
-                  trackHeight},
-        0.9f, 12, Color{204, 211, 214, 255});
-    DrawLineEx(Vector2{center.x, center.y - 56.0f}, Vector2{center.x, center.y + 56.0f}, 4.0f,
-               Color{184, 72, 49, 255});
-    DrawRectangleRounded(
-        Rectangle{sliderCenterX - barWidth * 0.5f, center.y - 36.0f, barWidth, 72.0f}, 0.25f, 8,
-        Color{46, 72, 88, 255});
+    DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
 
     DrawText(TextFormat("axis: %s", GetAxisLabel(displayAxis)), 40, screenHeight - 150, 24,
              Color{46, 72, 88, 255});
@@ -348,10 +378,9 @@ int main() {
              Color{46, 72, 88, 255});
     DrawText(TextFormat("centered angle: %.1f deg", centeredAngleDeg), 40, screenHeight - 86, 24,
              Color{46, 72, 88, 255});
-    DrawText(TextFormat("normalized: %.2f", normalizedValue), 40, screenHeight - 54, 24,
+    DrawText(TextFormat("steering angle: %.1f deg   normalized: %.2f", steeringAngleDeg, normalizedValue), 40, screenHeight - 54, 24,
              Color{46, 72, 88, 255});
 
-    const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
     const char* inputMode = hasFreshPackets
                                 ? "UDP sensor stream active"
                                 : (hasAnyPacket ? "Showing last packet - stream stale"

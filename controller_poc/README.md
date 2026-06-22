@@ -1,6 +1,6 @@
 # Steering Wheel Controller POC
 
-Minimal `raylib` app that listens for steering sensor data over `UDP` and visualizes it as a horizontal bar.
+Minimal `raylib` app that listens for steering sensor data over `UDP` and visualizes it as a rotating steering wheel.
 
 ## What It Does
 
@@ -12,14 +12,14 @@ Minimal `raylib` app that listens for steering sensor data over `UDP` and visual
 roll=12.4,pitch=-3.1,heading=182.0
 ```
 
-- renders a centered slider that tracks either `roll` or `pitch`
+- renders a steering wheel that turns with reversed `pitch` by default
 - falls back to keyboard input if no recent packets arrive
 
 ## Controls
 
-- `R`: show `roll`
-- `P`: show `pitch`
-- `SPACE`: set the current position as center
+- `P`: use `pitch` for steering
+- `R`: use `roll` for debug comparison
+- `SPACE`: set the current sensor orientation as center
 - `A` / `D` or left / right arrows: keyboard fallback input
 
 ## Building

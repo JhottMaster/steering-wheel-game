@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 
 import cadquery as cq
 from cadquery import exporters
@@ -306,6 +307,19 @@ def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 1
     return hole
 
 
+def make_half_ellipse_profile(half_width, height, segments=16):
+    points = []
+
+    for i in range(segments + 1):
+        t = math.pi - (math.pi * i / segments)
+        y = math.cos(t) * half_width
+        z = -math.sin(t) * height
+        points.append((y, z))
+
+    profile = cq.Workplane("YZ").polyline(points)
+    profile = profile.lineTo(-half_width, 0).close()
+    return profile
+
 # -----------------------------
 # Wheel rim
 # -----------------------------
@@ -356,10 +370,12 @@ for i in range(spoke_count):
     spokes = spokes.union(spoke)
 
     wiring_spoke = (
-        cq.Workplane("YZ")
-        .circle(spoke_width / 7)
+        make_half_ellipse_profile(
+            half_width=4.0,
+            height=5.0,   # taller than half_width = half oval
+        )
         .extrude(spoke_length * 3)
-        .translate((0, 0, spoke_thickness / 2))
+        .translate((0, 0, 11))
         .rotate((0, 0, 0), (0, 0, 1), angle - 90)
     )
 
@@ -391,7 +407,6 @@ antenna_compartment = cq.Workplane("XY").box(41, 22, 8).edges().fillet(1).transl
 result = result.cut(antenna_compartment)
 
 # Add screw holes
-
 screw_count = 4
 screw_length = 12
 
@@ -423,6 +438,9 @@ result = result.cut(cavity)
 # Split in half for printing, using screw holes to hold the halves together.
 steering_wheel_back, steering_wheel_front = cut_in_half_z(result, 11)
 
+
+############## Steering Wheel Back Electronic compartments
+
 # Create battery container
 battery_container_top = make_spanning_tray(0, 28.5, 1, tray_width=36, tray_thickness=2, depth=20)
 battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
@@ -431,7 +449,10 @@ battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z
 steering_wheel_back = steering_wheel_back.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
 # Battery management system board container
-bms_container_bottom = make_spanning_tray(12, 11, 1, tray_width=36, tray_thickness=2, depth=20)
+bms_container_bottom = make_spanning_tray(12, 12, 1, tray_width=36, tray_thickness=2, depth=20)
+button_wire_channel = cq.Workplane("XY").circle(5).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((24, 9, 8))
+bms_container_bottom = bms_container_bottom.cut(button_wire_channel)
+#show_debug(button_wire_channel)
 steering_wheel_back = steering_wheel_back.union(bms_container_bottom)
 steering_wheel_back = add_slot(
     steering_wheel_back,
@@ -445,20 +466,8 @@ steering_wheel_back = add_slot(
     clearance=charge_board_slot_clearance,
 )
 
-# Battery management system board mounting pegs
-bms_charger_pegs = make_horizontal_board_pegs(
-    center_x=6,
-    center_y=15,
-    center_z=0,
-    spacing_x=14.0,
-    spacing_z=15.0,
-    peg_diameter=1.8,
-    peg_length=4.0,
-)
-# steering_wheel_back = steering_wheel_back.union(bms_charger_pegs)
-
 # Battery Charging port
-steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 15, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 16, -10, port_cut_depth + 1)
 
 # On/off switch:
 steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_height * .80, charge_port_width, 25, -1, -10, port_cut_depth + 1)
@@ -468,27 +477,52 @@ on_off_rail_left = make_rail(20.5, -1, -6, size_x=2, size_y=15, size_z=7)
 on_off_bottom = make_spanning_tray(25, -8, -6, tray_width=14, tray_thickness=2, depth=7)
 steering_wheel_back = steering_wheel_back.union(on_off_top).union(on_off_rail_right).union(on_off_rail_left).union(on_off_bottom)
 
-# BNO055 Sensor pegs
-sensor_pegs = make_flat_board_pegs(
-    center_x=0,
-    center_y=-2,
-    center_z=port_cut_depth - 12,
-    spacing_x=21.2,
-    spacing_y=15.0,
-    peg_diameter=1.8,
-    peg_length=4.0,
+# BNO055 sensor board container
+bms_container_bottom = make_spanning_tray(4, -8, 1, tray_width=36, tray_thickness=2, depth=20)
+steering_wheel_back = steering_wheel_back.union(bms_container_bottom)
+steering_wheel_back = add_slot(
+    steering_wheel_back,
+    board_width=26,
+    slot_depth=4,
+    center_x=4,
+    center_y=-6,
+    center_z=1,
+    rail_thickness=2,
+    rail_height=20,
+    clearance=1,
 )
-steering_wheel_back = steering_wheel_back.union(sensor_pegs)
+# BNO055 sensor pegs
+# sensor_pegs = make_flat_board_pegs(
+#     center_x=0,
+#     center_y=-2,
+#     center_z=port_cut_depth - 12,
+#     spacing_x=21.2,
+#     spacing_y=15.0,
+#     peg_diameter=1.8,
+#     peg_length=4.0,
+# )
+# steering_wheel_back = steering_wheel_back.union(sensor_pegs)
 
 
 # XIAO MCU rear data port
-steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width, charge_port_height * 0.6, 6, -19, -10, port_cut_depth + 1)
 
 # XIAO MCU holder tray with wire channel
 mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
 mcu_wire_channel = cq.Workplane("XY").circle(3).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((1, -25, 0))
 mcu_tray = mcu_tray.cut(mcu_wire_channel)
 steering_wheel_back = steering_wheel_back.union(mcu_tray)
+steering_wheel_back = add_slot(
+    steering_wheel_back,
+    board_width=17,
+    slot_depth=4,
+    center_x=6,
+    center_y=-21,
+    center_z=1,
+    rail_thickness=2,
+    rail_height=20,
+    clearance=1,
+)
 
 
 cutting_tool = (
