@@ -439,18 +439,88 @@ result = result.cut(cavity)
 steering_wheel_back, steering_wheel_front = cut_in_half_z(result, 11)
 
 
+############## Steering Wheel Front status LED
+
+led_socket_outer_diameter = 8.5
+led_socket_inner_diameter = 6.5
+led_socket_height = 10.0
+led_socket_floor_thickness = 4
+
+led_socket_center_x = 0
+led_socket_center_y = 5
+led_socket_base_z = hub_thickness - led_socket_height - 10
+
+led_lead_spacing = 2.54
+led_lead_hole_diameter = 1.5
+led_lead_hole_depth = 5.0
+
+
+led_light_cutout = (
+    cq.Workplane("XY")
+    .circle((led_socket_inner_diameter / 2.0) * .5)
+    .extrude(10)
+    .translate((led_socket_center_x, led_socket_center_y, 20))
+)
+# show_debug(led_light_cutout, name="led_light_cutout")
+steering_wheel_front = steering_wheel_front.cut(led_light_cutout)
+
+led_socket_outer = (
+    cq.Workplane("XY")
+    .circle(led_socket_outer_diameter / 2.0)
+    .extrude(hub_thickness - 3)
+    .translate((led_socket_center_x, led_socket_center_y, -10))
+)
+wire_slot = make_rail(0, led_socket_center_y, 3, size_x=led_socket_outer_diameter, size_y=3.5, size_z=25)
+led_socket_outer =led_socket_outer.cut(wire_slot)
+
+led_body_cavity = make_cylinder_hole(
+    led_socket_inner_diameter,
+    led_socket_height - led_socket_floor_thickness + 0.2,
+    led_socket_center_x,
+    led_socket_center_y,
+    led_socket_base_z + led_socket_height + 0.1,
+)
+
+led_socket = led_socket_outer.cut(led_body_cavity)
+
+for led_lead_offset_x in (-led_lead_spacing / 2.0, led_lead_spacing / 2.0):
+    led_lead_hole = make_cylinder_hole(
+        led_lead_hole_diameter,
+        led_lead_hole_depth,
+        led_socket_center_x + led_lead_offset_x,
+        led_socket_center_y,
+        led_socket_base_z + led_socket_floor_thickness + 0.1,
+    )
+    led_socket = led_socket.cut(led_lead_hole)
+
+led_socket_rail_bridge = (
+    cq.Workplane("ZY")
+    .circle(3.5 / 2.0)
+    .extrude(led_socket_outer_diameter)
+    .translate((led_socket_outer_diameter/2.0, led_socket_center_y, led_socket_base_z))
+)
+led_socket = led_socket.cut(led_socket_rail_bridge)
+# show_debug(led_socket_rail_bridge, name="led_socket_rail_bridge")
+
+# show_debug(led_socket, name="led_socket")
+exporters.export(led_socket, "led_socket.stl")
+
+# steering_wheel_front = steering_wheel_front.union(led_socket)
+steering_wheel_back = steering_wheel_back.union(led_socket)
+
+
 ############## Steering Wheel Back Electronic compartments
 
 # Create battery container
 battery_container_top = make_spanning_tray(0, 28.5, 1, tray_width=36, tray_thickness=2, depth=20)
-battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=40, tray_thickness=2, depth=20)
+battery_container_bottom = make_spanning_tray(4, 22, 1, tray_width=38, tray_thickness=2, depth=20)
 battery_container_rail_long = make_rail(14, 26, 1, size_x=2, size_y=6, size_z=20)
 battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z=6)
 steering_wheel_back = steering_wheel_back.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
 # Battery management system board container
-bms_container_bottom = make_spanning_tray(12, 12, 1, tray_width=36, tray_thickness=2, depth=20)
-button_wire_channel = cq.Workplane("XY").circle(5).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((24, 9, 8))
+bms_container_bottom = make_spanning_tray(11.5, 12.5, 1, tray_width=35, tray_thickness=2, depth=20)
+button_wire_channel = cq.Workplane("XY").circle(5).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((24, 9.5, 8))
 bms_container_bottom = bms_container_bottom.cut(button_wire_channel)
 #show_debug(button_wire_channel)
 steering_wheel_back = steering_wheel_back.union(bms_container_bottom)
@@ -459,7 +529,7 @@ steering_wheel_back = add_slot(
     board_width=19,
     slot_depth=4,
     center_x=6,
-    center_y=14,
+    center_y=14.5,
     center_z=1,
     rail_thickness=2,
     rail_height=20,
@@ -467,10 +537,10 @@ steering_wheel_back = add_slot(
 )
 
 # Battery Charging port
-steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 16, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 16.5, -10, port_cut_depth + 1)
 
 # On/off switch:
-steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_height * .80, charge_port_width, 25, -1, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_height * .80, charge_port_width * .9, 25, 0, -10, port_cut_depth + 1)
 on_off_top = make_spanning_tray(25, 7, -6, tray_width=14, tray_thickness=2, depth=7)
 on_off_rail_right = make_rail(29.5, -1, -6, size_x=2, size_y=15, size_z=7)
 on_off_rail_left = make_rail(20.5, -1, -6, size_x=2, size_y=15, size_z=7)
@@ -489,8 +559,11 @@ steering_wheel_back = add_slot(
     center_z=1,
     rail_thickness=2,
     rail_height=20,
-    clearance=1,
+    clearance=0.5,
 )
+bms_container_lip_1 = make_spanning_tray(-9.5, -3.5, 1, tray_width=4, tray_thickness=2, depth=20)
+bms_container_lip_2 = make_spanning_tray(17.5, -3.5, 1, tray_width=4, tray_thickness=2, depth=20)
+steering_wheel_back = steering_wheel_back.union(bms_container_lip_1).union(bms_container_lip_2)
 # BNO055 sensor pegs
 # sensor_pegs = make_flat_board_pegs(
 #     center_x=0,
@@ -505,7 +578,7 @@ steering_wheel_back = add_slot(
 
 
 # XIAO MCU rear data port
-steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width, charge_port_height * 0.6, 6, -19, -10, port_cut_depth + 1)
+steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width, charge_port_height * 0.6, 6, -18.5, -10, port_cut_depth + 1)
 
 # XIAO MCU holder tray with wire channel
 mcu_tray = make_spanning_tray(8, -23, 1, tray_width=36, tray_thickness=2, depth=20)
