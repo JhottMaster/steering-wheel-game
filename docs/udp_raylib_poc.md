@@ -9,7 +9,7 @@ This proof of concept connects the current hardware bring-up to a very small cro
 
 ## Goal
 
-Show a blank game placeholder by default, with a `T`-toggle hardware test dashboard that visualizes BNO055 orientation and button input.
+Show a simple top-down Road Carpet Drive game by default, with a `T`-toggle hardware test dashboard that visualizes BNO055 orientation and button input.
 
 ## Repo Layout
 
@@ -23,7 +23,8 @@ Show a blank game placeholder by default, with a `T`-toggle hardware test dashbo
 1. The XIAO reads fused orientation data from the BNO055.
 2. The XIAO sends packets over Wi-Fi using `UDP`.
 3. The `raylib` app listens on port `4210`.
-4. In hardware test mode, the app rotates an on-screen steering wheel based on the selected incoming orientation axis.
+4. In game mode, the app steers a toy car on a generated road-carpet map using `pitch` by default.
+5. In hardware test mode, the app rotates an on-screen steering wheel based on the selected incoming orientation axis.
 
 Packet format:
 
@@ -71,16 +72,32 @@ Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for liv
 
 ## Desktop App Behavior
 
-- `T` toggles between the blank game placeholder and hardware test dashboard
+- default mode is the Road Carpet Drive game
+- `T` toggles between the game and hardware test dashboard
+- `F11` toggles fullscreen
+- `A` toggles auto-drive / button-throttle mode in the game
 - `P` uses `pitch` for steering
 - `R` uses `roll` for debug comparison
 - `Y` uses `yaw` / `heading` for debug comparison
 - `SPACE` captures the current sensor orientation as the center, so switching between `roll`, `pitch`, and `yaw` stays calibrated
-- `A` / `D` or left / right arrows provide a keyboard fallback when packets are not arriving
+- `A` / `D` or left / right arrows provide a keyboard steering fallback when packets are not arriving
+- `W` / up arrow and `S` / down arrow provide keyboard acceleration/brake fallback in button-throttle mode
 - the app displays the latest `roll`, `pitch`, `heading`, `button1`, and `button2` values from UDP packets
 - the hardware test dashboard shows `button2` as a red lamp on the left and `button1` as a green lamp on the right
 - the app shows the host IPv4 address in the window so it is easy to copy into `wifi_secrets.h`
 - the app keeps the last received value on screen even if packets go stale
+
+## Game Assets
+
+The game uses generated original PNG art in `controller_poc/assets/sprites`:
+
+- `road_carpet_map_2.png`
+- `sports_car_top.png`
+- `coin.png`
+
+`toy_car_top.png` is kept as an alternate car sprite.
+
+Run `python tools/generate_assets.py` from `controller_poc` to regenerate the current art.
 
 ## Controller GPIO
 
@@ -116,6 +133,8 @@ The status LED is driven by a millis-based state machine. Wi-Fi setup, retry wai
 
 The POC expects a `raylib` checkout at `controller_poc/../raylib` by default, similar to your existing workflow. If needed, set `RAYLIB_DIR` before building.
 
+Run logic tests with `windows_test.bat`.
+
 ### Linux
 
 The POC expects a system `raylib` package discoverable through `pkg-config`.
@@ -123,10 +142,11 @@ The POC expects a system `raylib` package discoverable through `pkg-config`.
 ## Suggested First Test
 
 1. Build and launch the `raylib` app.
-2. Confirm the keyboard fallback moves the bar.
+2. Confirm Road Carpet Drive loads by default.
 3. Fill in Wi-Fi credentials and host IP in `wifi_secrets.h`.
 4. Upload the firmware.
-5. Confirm the app switches from keyboard fallback to live `UDP` sensor input.
+5. Confirm the car switches from keyboard fallback to live `UDP` steering input.
+6. Press `T` to verify the hardware test dashboard.
 
 ## Real-World Networking Notes
 

@@ -40,10 +40,11 @@ constexpr SocketHandle kInvalidSocket = -1;
 #endif
 
 #include "raylib.h"
+#include "game_logic.h"
 
 namespace {
-constexpr int kWindowWidth = 1280;
-constexpr int kWindowHeight = 720;
+constexpr int kWindowWidth = 1600;
+constexpr int kWindowHeight = 900;
 constexpr int kUdpPort = 4210;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
@@ -60,14 +61,6 @@ enum class DisplayAxis {
 enum class AppMode {
   kGame,
   kHardwareTest,
-};
-
-struct SensorFrame {
-  float roll = 0.0f;
-  float pitch = 0.0f;
-  float heading = 0.0f;
-  bool button1Pressed = false;
-  bool button2Pressed = false;
 };
 
 struct UdpReceiver {
@@ -137,27 +130,6 @@ struct UdpReceiver {
   ~UdpReceiver() { Close(); }
 };
 
-bool ParsePacket(const char* packet, SensorFrame* frame) {
-  float roll = 0.0f;
-  float pitch = 0.0f;
-  float heading = 0.0f;
-  int button1 = 0;
-  int button2 = 0;
-  const int parsed =
-      std::sscanf(packet, "roll=%f,pitch=%f,heading=%f,button1=%d,button2=%d",
-                  &roll, &pitch, &heading, &button1, &button2);
-  if (parsed < 3) {
-    return false;
-  }
-
-  frame->roll = roll;
-  frame->pitch = pitch;
-  frame->heading = heading;
-  frame->button1Pressed = parsed >= 4 && button1 != 0;
-  frame->button2Pressed = parsed >= 5 && button2 != 0;
-  return true;
-}
-
 bool PollLatestSensorFrame(UdpReceiver* receiver, SensorFrame* frame) {
   bool receivedFrame = false;
   std::array<char, 256> buffer{};
@@ -226,10 +198,6 @@ const char* GetAxisLabel(DisplayAxis axis) {
   return "pitch";
 }
 
-float ClampToUnit(float value) {
-  return std::clamp(value, -1.0f, 1.0f);
-}
-
 Vector2 PointOnCircle(Vector2 center, float radius, float angleDeg) {
   const float radians = angleDeg * kDegToRad;
   return Vector2{center.x + std::cos(radians) * radius,
@@ -276,6 +244,144 @@ void DrawButtonLamp(Vector2 center, float radius, bool pressed, Color dimColor, 
   const int labelWidth = MeasureText(label, 20);
   DrawText(label, static_cast<int>(center.x - labelWidth / 2), static_cast<int>(center.y + radius + 12.0f),
            20, Color{46, 72, 88, 255});
+}
+
+struct GameAssets {
+  Texture2D map = {};
+  Texture2D car = {};
+  Texture2D coin = {};
+};
+
+bool TextureLoaded(Texture2D texture) {
+  return texture.id != 0;
+}
+
+std::string FindSpritePath(const char* filename) {
+  const std::vector<std::string> candidates = {
+      std::string("assets/sprites/") + filename,
+      std::string("controller_poc/assets/sprites/") + filename,
+      std::string("../assets/sprites/") + filename,
+      std::string("../../assets/sprites/") + filename,
+  };
+
+  for (const std::string& candidate : candidates) {
+    if (FileExists(candidate.c_str())) {
+      return candidate;
+    }
+  }
+
+  return candidates.front();
+}
+
+GameAssets LoadGameAssets() {
+  GameAssets assets;
+  assets.map = LoadTexture(FindSpritePath("road_carpet_map_2.png").c_str());
+  assets.car = LoadTexture(FindSpritePath("sports_car_top.png").c_str());
+  assets.coin = LoadTexture(FindSpritePath("coin.png").c_str());
+  return assets;
+}
+
+void UnloadGameAssets(GameAssets* assets) {
+  if (TextureLoaded(assets->map)) {
+    UnloadTexture(assets->map);
+  }
+  if (TextureLoaded(assets->car)) {
+    UnloadTexture(assets->car);
+  }
+  if (TextureLoaded(assets->coin)) {
+    UnloadTexture(assets->coin);
+  }
+}
+
+Vector2 ToVector2(GameVec2 value) {
+  return Vector2{value.x, value.y};
+}
+
+Camera2D BuildGameCamera(const GameState& game, int screenWidth, int screenHeight) {
+  constexpr float targetWorldWidth = 640.0f;
+  constexpr float minZoom = 1.0f;
+  constexpr float maxZoom = 2.4f;
+  const float zoom =
+      std::clamp(static_cast<float>(screenWidth) / targetWorldWidth, minZoom, maxZoom);
+  const float halfViewWidth = static_cast<float>(screenWidth) * 0.5f / zoom;
+  const float halfViewHeight = static_cast<float>(screenHeight) * 0.5f / zoom;
+  Camera2D camera = {};
+  camera.offset = Vector2{static_cast<float>(screenWidth) * 0.5f, static_cast<float>(screenHeight) * 0.5f};
+  if (halfViewWidth * 2.0f >= kGameMapSize) {
+    camera.target.x = kGameMapSize * 0.5f;
+  } else {
+    camera.target.x = std::clamp(game.carPosition.x, halfViewWidth, kGameMapSize - halfViewWidth);
+  }
+  if (halfViewHeight * 2.0f >= kGameMapSize) {
+    camera.target.y = kGameMapSize * 0.5f;
+  } else {
+    camera.target.y = std::clamp(game.carPosition.y, halfViewHeight, kGameMapSize - halfViewHeight);
+  }
+  camera.rotation = 0.0f;
+  camera.zoom = zoom;
+  return camera;
+}
+
+void DrawGame(const GameState& game, const GameAssets& assets, bool hasFreshPackets,
+              const std::string& localIpText, int screenWidth, int screenHeight) {
+  ClearBackground(Color{60, 133, 126, 255});
+
+  const Camera2D camera = BuildGameCamera(game, screenWidth, screenHeight);
+  BeginMode2D(camera);
+  if (TextureLoaded(assets.map)) {
+    DrawTexture(assets.map, 0, 0, WHITE);
+  } else {
+    DrawRectangle(0, 0, static_cast<int>(kGameMapSize), static_cast<int>(kGameMapSize),
+                  Color{68, 142, 134, 255});
+  }
+
+  for (const CoinState& coin : game.coins) {
+    if (coin.collected) {
+      continue;
+    }
+    if (TextureLoaded(assets.coin)) {
+      const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.coin.width),
+                                static_cast<float>(assets.coin.height)};
+      const Rectangle destination = {coin.position.x, coin.position.y, 46.0f, 46.0f};
+      DrawTexturePro(assets.coin, source, destination, Vector2{23.0f, 23.0f}, 0.0f, WHITE);
+    } else {
+      DrawCircleV(ToVector2(coin.position), 22.0f, GOLD);
+    }
+  }
+
+  if (TextureLoaded(assets.car)) {
+    const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.car.width),
+                              static_cast<float>(assets.car.height)};
+    const float carDrawWidth = 58.0f;
+    const float carDrawHeight = carDrawWidth * static_cast<float>(assets.car.height) /
+                                static_cast<float>(assets.car.width);
+    const Rectangle destination = {game.carPosition.x, game.carPosition.y, carDrawWidth, carDrawHeight};
+    DrawTexturePro(assets.car, source, destination,
+                   Vector2{carDrawWidth * 0.5f, carDrawHeight * 0.5f}, game.carHeadingDeg, WHITE);
+  } else {
+    const Vector2 nose = PointOnCircle(ToVector2(game.carPosition), 34.0f, game.carHeadingDeg - 90.0f);
+    DrawCircleV(ToVector2(game.carPosition), 28.0f, RED);
+    DrawCircleV(nose, 8.0f, YELLOW);
+  }
+  EndMode2D();
+
+  DrawRectangle(20, 20, 420, 122, Color{18, 28, 32, 185});
+  DrawText("Road Carpet Drive", 38, 36, 30, Color{255, 244, 205, 255});
+  DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())),
+           40, 74, 22, Color{232, 236, 224, 255});
+  DrawText(TextFormat("drive: %s   speed: %.0f",
+                      game.driveMode == DriveMode::kAuto ? "auto" : "button",
+                      game.carSpeed),
+           40, 104, 20, Color{232, 236, 224, 255});
+
+  DrawRectangle(screenWidth - 430, 20, 410, 118, Color{18, 28, 32, 185});
+  DrawText("T: hardware test   F11: fullscreen", screenWidth - 408, 36, 22, Color{232, 236, 224, 255});
+  DrawText("A: auto/button drive   SPACE: center", screenWidth - 408, 66, 19,
+           Color{195, 214, 204, 255});
+  DrawText(hasFreshPackets ? "UDP controller active" : "keyboard fallback",
+           screenWidth - 408, 94, 19,
+           hasFreshPackets ? Color{104, 230, 141, 255} : Color{246, 187, 87, 255});
+  DrawText(localIpText.c_str(), screenWidth - 408, 116, 16, Color{176, 196, 186, 255});
 }
 
 std::vector<std::string> GetLocalIpv4Addresses() {
@@ -348,10 +454,14 @@ int main() {
   const bool udpReady = receiver.Open(kUdpPort);
   const std::string localIpText = JoinLocalIps(GetLocalIpv4Addresses());
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
   InitWindow(kWindowWidth, kWindowHeight, "Steering Wheel Controller POC");
+  SetWindowMinSize(960, 540);
+  MaximizeWindow();
   SetTargetFPS(60);
 
+  GameAssets gameAssets = LoadGameAssets();
+  GameState game;
   SensorFrame latestFrame;
   SensorFrame lastGoodFrame;
   SensorFrame centerFrame;
@@ -362,8 +472,14 @@ int main() {
   float manualAngleDeg = 0.0f;
 
   while (!WindowShouldClose()) {
+    if (IsKeyPressed(KEY_F11)) {
+      ToggleFullscreen();
+    }
     if (IsKeyPressed(KEY_T)) {
       appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
+    }
+    if (appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
+      ToggleDriveMode(&game);
     }
 
     if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
@@ -379,6 +495,10 @@ int main() {
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
       lastPacketTime = std::chrono::steady_clock::now();
+      if (!hasCenterFrame) {
+        centerFrame = lastGoodFrame;
+        hasCenterFrame = true;
+      }
     }
 
     const float dt = GetFrameTime();
@@ -399,7 +519,7 @@ int main() {
     if (!hasFreshPackets && !hasAnyPacket) {
       sourceAngleDeg = manualAngleDeg;
     }
-    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_SPACE)) {
+    if (IsKeyPressed(KEY_SPACE)) {
       if (hasAnyPacket) {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
@@ -414,7 +534,24 @@ int main() {
         hasCenterFrame ? GetAxisDegrees(displayAxis, centerFrame) : 0.0f;
     const float centeredAngleDeg = sourceAngleDeg - calibrationOffsetDeg;
     const float steeringAngleDeg = centeredAngleDeg * kSteeringDirection;
-    const float normalizedValue = ClampToUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
+    const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
+
+    const float gameSourceAngleDeg = hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame)
+                                                  : manualAngleDeg;
+    const float gameCalibrationOffsetDeg =
+        hasCenterFrame ? GetAxisDegrees(DisplayAxis::kPitch, centerFrame) : 0.0f;
+    const float gameSteeringInput =
+        ClampUnit(((gameSourceAngleDeg - gameCalibrationOffsetDeg) * kSteeringDirection) /
+                  kVisibleAngleRangeDeg);
+    const GameButtons gameButtons = {
+        (hasFreshPackets && lastGoodFrame.button1Pressed) ||
+            (!hasFreshPackets && (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))),
+        (hasFreshPackets && lastGoodFrame.button2Pressed) ||
+            (!hasFreshPackets && (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S))),
+    };
+    if (appMode == AppMode::kGame) {
+      UpdateGame(&game, gameSteeringInput, gameButtons, dt);
+    }
 
     const int screenWidth = GetScreenWidth();
     const int screenHeight = GetScreenHeight();
@@ -423,16 +560,14 @@ int main() {
 
     BeginDrawing();
     if (appMode == AppMode::kGame) {
-      ClearBackground(Color{18, 28, 32, 255});
-      DrawText("Game mode placeholder", 40, 32, 30, Color{214, 222, 210, 255});
-      DrawText("Press T for hardware test mode", 40, 72, 22, Color{133, 154, 145, 255});
+      DrawGame(game, gameAssets, hasFreshPackets, localIpText, screenWidth, screenHeight);
       EndDrawing();
       continue;
     }
 
     ClearBackground(Color{242, 239, 228, 255});
     DrawText("Toddler Steering Wheel POC", 40, 28, 34, Color{46, 72, 88, 255});
-    DrawText("T: game/test   P: pitch   R: roll   Y: yaw   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
+    DrawText("T: game/test   F11: fullscreen   P/R/Y: axis   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
              Color{77, 92, 103, 255});
 
     DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
@@ -483,6 +618,7 @@ int main() {
     EndDrawing();
   }
 
+  UnloadGameAssets(&gameAssets);
   CloseWindow();
   return 0;
 }
