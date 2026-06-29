@@ -41,6 +41,7 @@ Generated game assets live in:
 
 ```text
 assets/sprites/
+assets/sounds/
 ```
 
 Fixed filenames are used so the art can be replaced later without code changes:
@@ -51,10 +52,17 @@ Fixed filenames are used so the art can be replaced later without code changes:
 
 `toy_car_top.png` is kept as an alternate car sprite.
 
-To regenerate the current original art:
+Sound assets are also generated original files:
+
+- `carpet_cruise_loop.wav`
+- `toy_engine_loop.wav`
+- `coin_chime.wav`
+
+To regenerate the current original art and sounds:
 
 ```text
 python tools/generate_assets.py
+python tools/generate_sounds.py
 ```
 
 ## Building

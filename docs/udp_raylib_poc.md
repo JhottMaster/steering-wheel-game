@@ -89,15 +89,18 @@ Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for liv
 
 ## Game Assets
 
-The game uses generated original PNG art in `controller_poc/assets/sprites`:
+The game uses generated original assets in `controller_poc/assets`:
 
 - `road_carpet_map_2.png`
 - `sports_car_top.png`
 - `coin.png`
+- `carpet_cruise_loop.wav`
+- `toy_engine_loop.wav`
+- `coin_chime.wav`
 
 `toy_car_top.png` is kept as an alternate car sprite.
 
-Run `python tools/generate_assets.py` from `controller_poc` to regenerate the current art.
+Run `python tools/generate_assets.py` and `python tools/generate_sounds.py` from `controller_poc` to regenerate the current art and sound assets.
 
 ## Controller GPIO
 

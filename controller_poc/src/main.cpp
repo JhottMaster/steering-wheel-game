@@ -246,22 +246,149 @@ void DrawButtonLamp(Vector2 center, float radius, bool pressed, Color dimColor, 
            20, Color{46, 72, 88, 255});
 }
 
+void DrawPanel(Rectangle bounds, Color fillColor) {
+  DrawRectangleRounded(bounds, 0.10f, 10, fillColor);
+  DrawRectangleRoundedLines(bounds, 0.10f, 10, Color{206, 198, 179, 255});
+}
+
+void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
+                      float sourceAngleDeg, float centeredAngleDeg, float steeringAngleDeg,
+                      float normalizedValue, bool hasFreshPackets, bool hasAnyPacket,
+                      bool udpReady, const std::string& localIpText, int screenWidth,
+                      int screenHeight) {
+  ClearBackground(Color{242, 239, 228, 255});
+
+  const float contentWidth = std::min(static_cast<float>(screenWidth) - 80.0f, 1540.0f);
+  const float contentLeft = (static_cast<float>(screenWidth) - contentWidth) * 0.5f;
+  const float contentRight = contentLeft + contentWidth;
+  const float top = 26.0f;
+  const float panelTop = 112.0f;
+  const float bottomMargin = 32.0f;
+  const float panelHeight = std::max(420.0f, static_cast<float>(screenHeight) - panelTop - bottomMargin);
+  const float sidePanelWidth = std::clamp(contentWidth * 0.26f, 320.0f, 430.0f);
+  const float gap = 24.0f;
+  const Rectangle leftPanel = {contentLeft, panelTop, sidePanelWidth, panelHeight};
+  const Rectangle rightPanel = {contentRight - sidePanelWidth, panelTop, sidePanelWidth, panelHeight};
+  const Rectangle wheelPanel = {leftPanel.x + leftPanel.width + gap, panelTop,
+                                contentWidth - sidePanelWidth * 2.0f - gap * 2.0f,
+                                panelHeight};
+
+  DrawText("Toddler Steering Wheel POC", static_cast<int>(contentLeft), static_cast<int>(top), 34,
+           Color{46, 72, 88, 255});
+  DrawText("T: game/test   F11: fullscreen   P/R/Y: axis   SPACE: center   A/D or arrows: fallback input",
+           static_cast<int>(contentLeft), static_cast<int>(top + 42.0f), 21,
+           Color{77, 92, 103, 255});
+
+  DrawPanel(leftPanel, Color{255, 250, 235, 235});
+  DrawPanel(rightPanel, Color{255, 250, 235, 235});
+  DrawPanel(wheelPanel, Color{248, 244, 231, 235});
+
+  const Vector2 center = {wheelPanel.x + wheelPanel.width * 0.5f,
+                          wheelPanel.y + wheelPanel.height * 0.52f};
+  const float wheelRadius = std::clamp(std::min(wheelPanel.width, wheelPanel.height) * 0.32f,
+                                       135.0f, 270.0f);
+  DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
+  DrawButtonLamp(Vector2{center.x - wheelRadius * 1.34f, center.y}, wheelRadius * 0.16f,
+                 lastGoodFrame.button2Pressed, Color{92, 35, 34, 255},
+                 Color{237, 54, 43, 255}, "button 2");
+  DrawButtonLamp(Vector2{center.x + wheelRadius * 1.34f, center.y}, wheelRadius * 0.16f,
+                 lastGoodFrame.button1Pressed, Color{35, 84, 50, 255},
+                 Color{52, 222, 98, 255}, "button 1");
+
+  const int leftX = static_cast<int>(leftPanel.x + 24.0f);
+  int y = static_cast<int>(leftPanel.y + 24.0f);
+  DrawText("Steering Input", leftX, y, 26, Color{46, 72, 88, 255});
+  y += 44;
+  DrawText(TextFormat("axis: %s", GetAxisLabel(displayAxis)), leftX, y, 23,
+           Color{46, 72, 88, 255});
+  y += 38;
+  DrawText(TextFormat("raw: %.1f deg", sourceAngleDeg), leftX, y, 23,
+           Color{46, 72, 88, 255});
+  y += 38;
+  DrawText(TextFormat("centered: %.1f deg", centeredAngleDeg), leftX, y, 23,
+           Color{46, 72, 88, 255});
+  y += 38;
+  DrawText(TextFormat("wheel: %.1f deg", steeringAngleDeg), leftX, y, 23,
+           Color{46, 72, 88, 255});
+  y += 38;
+  DrawText(TextFormat("normalized: %.2f", normalizedValue), leftX, y, 23,
+           Color{46, 72, 88, 255});
+  y += 56;
+  DrawText("Buttons", leftX, y, 26, Color{46, 72, 88, 255});
+  y += 44;
+  DrawText(TextFormat("green/right: %s", lastGoodFrame.button1Pressed ? "pressed" : "up"),
+           leftX, y, 22, Color{46, 72, 88, 255});
+  y += 34;
+  DrawText(TextFormat("red/left: %s", lastGoodFrame.button2Pressed ? "pressed" : "up"),
+           leftX, y, 22, Color{46, 72, 88, 255});
+
+  const int rightX = static_cast<int>(rightPanel.x + 24.0f);
+  y = static_cast<int>(rightPanel.y + 24.0f);
+  const char* inputMode = hasFreshPackets
+                              ? "UDP sensor stream active"
+                              : (hasAnyPacket ? "Showing stale packet" : "Keyboard fallback");
+  DrawText("Connection", rightX, y, 26, Color{46, 72, 88, 255});
+  y += 44;
+  DrawText(inputMode, rightX, y, 21,
+           hasFreshPackets ? Color{59, 120, 87, 255}
+                           : (hasAnyPacket ? Color{191, 134, 33, 255}
+                                           : Color{184, 72, 49, 255}));
+  y += 38;
+  DrawText(TextFormat("UDP port: %d", kUdpPort), rightX, y, 21, Color{77, 92, 103, 255});
+  y += 34;
+  DrawText(udpReady ? "Listener: ready" : "Listener: failed",
+           rightX, y, 21,
+           udpReady ? Color{59, 120, 87, 255} : Color{184, 72, 49, 255});
+  y += 46;
+  DrawText("Host IPv4", rightX, y, 22, Color{77, 92, 103, 255});
+  y += 30;
+  DrawText(localIpText.c_str(), rightX, y, 20, Color{46, 72, 88, 255});
+  y += 56;
+  DrawText("Latest packet", rightX, y, 22, Color{77, 92, 103, 255});
+  y += 32;
+  DrawText(TextFormat("roll %.1f", lastGoodFrame.roll), rightX, y, 20,
+           Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("pitch %.1f", lastGoodFrame.pitch), rightX, y, 20,
+           Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("heading %.1f", lastGoodFrame.heading), rightX, y, 20,
+           Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("button1 %s", lastGoodFrame.button1Pressed ? "pressed" : "up"),
+           rightX, y, 20, Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("button2 %s", lastGoodFrame.button2Pressed ? "pressed" : "up"),
+           rightX, y, 20, Color{46, 72, 88, 255});
+}
+
 struct GameAssets {
   Texture2D map = {};
   Texture2D car = {};
   Texture2D coin = {};
 };
 
+struct GameAudio {
+  Music background = {};
+  Music engine = {};
+  Sound coin = {};
+  bool ready = false;
+  bool backgroundLoaded = false;
+  bool engineLoaded = false;
+  bool coinLoaded = false;
+  int lastScore = 0;
+};
+
 bool TextureLoaded(Texture2D texture) {
   return texture.id != 0;
 }
 
-std::string FindSpritePath(const char* filename) {
+std::string FindAssetPath(const char* folder, const char* filename) {
   const std::vector<std::string> candidates = {
-      std::string("assets/sprites/") + filename,
-      std::string("controller_poc/assets/sprites/") + filename,
-      std::string("../assets/sprites/") + filename,
-      std::string("../../assets/sprites/") + filename,
+      std::string(folder) + "/" + filename,
+      std::string("controller_poc/") + folder + "/" + filename,
+      std::string("../") + folder + "/" + filename,
+      std::string("../../") + folder + "/" + filename,
   };
 
   for (const std::string& candidate : candidates) {
@@ -273,12 +400,51 @@ std::string FindSpritePath(const char* filename) {
   return candidates.front();
 }
 
+std::string FindSpritePath(const char* filename) {
+  return FindAssetPath("assets/sprites", filename);
+}
+
+std::string FindSoundPath(const char* filename) {
+  return FindAssetPath("assets/sounds", filename);
+}
+
 GameAssets LoadGameAssets() {
   GameAssets assets;
   assets.map = LoadTexture(FindSpritePath("road_carpet_map_2.png").c_str());
   assets.car = LoadTexture(FindSpritePath("sports_car_top.png").c_str());
   assets.coin = LoadTexture(FindSpritePath("coin.png").c_str());
   return assets;
+}
+
+GameAudio LoadGameAudio() {
+  GameAudio audio;
+  if (!IsAudioDeviceReady()) {
+    return audio;
+  }
+
+  audio.ready = true;
+  audio.background = LoadMusicStream(FindSoundPath("carpet_cruise_loop.wav").c_str());
+  audio.backgroundLoaded = audio.background.stream.buffer != nullptr;
+  audio.engine = LoadMusicStream(FindSoundPath("toy_engine_loop.wav").c_str());
+  audio.engineLoaded = audio.engine.stream.buffer != nullptr;
+  audio.coin = LoadSound(FindSoundPath("coin_chime.wav").c_str());
+  audio.coinLoaded = audio.coin.stream.buffer != nullptr;
+
+  if (audio.backgroundLoaded) {
+    audio.background.looping = true;
+    SetMusicVolume(audio.background, 0.28f);
+    PlayMusicStream(audio.background);
+  }
+  if (audio.engineLoaded) {
+    audio.engine.looping = true;
+    SetMusicVolume(audio.engine, 0.0f);
+    PlayMusicStream(audio.engine);
+  }
+  if (audio.coinLoaded) {
+    SetSoundVolume(audio.coin, 0.72f);
+  }
+
+  return audio;
 }
 
 void UnloadGameAssets(GameAssets* assets) {
@@ -291,6 +457,41 @@ void UnloadGameAssets(GameAssets* assets) {
   if (TextureLoaded(assets->coin)) {
     UnloadTexture(assets->coin);
   }
+}
+
+void UnloadGameAudio(GameAudio* audio) {
+  if (audio->backgroundLoaded) {
+    UnloadMusicStream(audio->background);
+  }
+  if (audio->engineLoaded) {
+    UnloadMusicStream(audio->engine);
+  }
+  if (audio->coinLoaded) {
+    UnloadSound(audio->coin);
+  }
+}
+
+void UpdateGameAudio(GameAudio* audio, const GameState& game, bool gameModeActive) {
+  if (!audio->ready) {
+    return;
+  }
+
+  if (audio->backgroundLoaded) {
+    UpdateMusicStream(audio->background);
+    SetMusicVolume(audio->background, gameModeActive ? 0.28f : 0.10f);
+  }
+
+  if (audio->engineLoaded) {
+    UpdateMusicStream(audio->engine);
+    const float speedUnit = std::clamp(game.carSpeed / kGameMaxSpeed, 0.0f, 1.0f);
+    SetMusicVolume(audio->engine, gameModeActive ? 0.08f + speedUnit * 0.18f : 0.0f);
+    SetMusicPitch(audio->engine, 0.75f + speedUnit * 0.65f);
+  }
+
+  if (audio->coinLoaded && game.score > audio->lastScore) {
+    PlaySound(audio->coin);
+  }
+  audio->lastScore = game.score;
 }
 
 Vector2 ToVector2(GameVec2 value) {
@@ -459,8 +660,10 @@ int main() {
   SetWindowMinSize(960, 540);
   MaximizeWindow();
   SetTargetFPS(60);
+  InitAudioDevice();
 
   GameAssets gameAssets = LoadGameAssets();
+  GameAudio gameAudio = LoadGameAudio();
   GameState game;
   SensorFrame latestFrame;
   SensorFrame lastGoodFrame;
@@ -552,11 +755,10 @@ int main() {
     if (appMode == AppMode::kGame) {
       UpdateGame(&game, gameSteeringInput, gameButtons, dt);
     }
+    UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame);
 
     const int screenWidth = GetScreenWidth();
     const int screenHeight = GetScreenHeight();
-    const Vector2 center = {screenWidth * 0.5f, screenHeight * 0.52f};
-    const float wheelRadius = std::min(screenWidth, screenHeight) * 0.28f;
 
     BeginDrawing();
     if (appMode == AppMode::kGame) {
@@ -565,60 +767,18 @@ int main() {
       continue;
     }
 
-    ClearBackground(Color{242, 239, 228, 255});
-    DrawText("Toddler Steering Wheel POC", 40, 28, 34, Color{46, 72, 88, 255});
-    DrawText("T: game/test   F11: fullscreen   P/R/Y: axis   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
-             Color{77, 92, 103, 255});
-
-    DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
-    DrawButtonLamp(Vector2{center.x - wheelRadius * 1.35f, center.y}, wheelRadius * 0.16f,
-                   lastGoodFrame.button2Pressed, Color{92, 35, 34, 255},
-                   Color{237, 54, 43, 255}, "button 2");
-    DrawButtonLamp(Vector2{center.x + wheelRadius * 1.35f, center.y}, wheelRadius * 0.16f,
-                   lastGoodFrame.button1Pressed, Color{35, 84, 50, 255},
-                   Color{52, 222, 98, 255}, "button 1");
-
-    DrawText(TextFormat("axis: %s", GetAxisLabel(displayAxis)), 40, screenHeight - 150, 24,
-             Color{46, 72, 88, 255});
-    DrawText(TextFormat("raw angle: %.1f deg", sourceAngleDeg), 40, screenHeight - 118, 24,
-             Color{46, 72, 88, 255});
-    DrawText(TextFormat("centered angle: %.1f deg", centeredAngleDeg), 40, screenHeight - 86, 24,
-             Color{46, 72, 88, 255});
-    DrawText(TextFormat("steering angle: %.1f deg   normalized: %.2f", steeringAngleDeg, normalizedValue), 40, screenHeight - 54, 24,
-             Color{46, 72, 88, 255});
-    DrawText(TextFormat("buttons: 1=%s  2=%s",
-                        lastGoodFrame.button1Pressed ? "pressed" : "up",
-                        lastGoodFrame.button2Pressed ? "pressed" : "up"),
-             40, screenHeight - 22, 20, Color{46, 72, 88, 255});
-
-    const char* inputMode = hasFreshPackets
-                                ? "UDP sensor stream active"
-                                : (hasAnyPacket ? "Showing last packet - stream stale"
-                                                : "No packets yet - keyboard fallback");
-    DrawText(inputMode, screenWidth - 420, 32, 22,
-             hasFreshPackets ? Color{59, 120, 87, 255}
-                             : (hasAnyPacket ? Color{191, 134, 33, 255}
-                                             : Color{184, 72, 49, 255}));
-    DrawText(TextFormat("UDP port: %d", kUdpPort), screenWidth - 420, 64, 22,
-             Color{77, 92, 103, 255});
-    DrawText(udpReady ? "Listener: ready" : "Listener: failed to bind UDP socket",
-             screenWidth - 420, 96, 22,
-             udpReady ? Color{59, 120, 87, 255} : Color{184, 72, 49, 255});
-    DrawText("Host IPv4:", screenWidth - 420, 128, 22, Color{77, 92, 103, 255});
-    DrawText(localIpText.c_str(), screenWidth - 420, 156, 22, Color{46, 72, 88, 255});
-    DrawText("Latest packet:", screenWidth - 420, 200, 22, Color{77, 92, 103, 255});
-    DrawText(TextFormat("roll %.1f  pitch %.1f  heading %.1f",
-                        lastGoodFrame.roll, lastGoodFrame.pitch, lastGoodFrame.heading),
-             screenWidth - 420, 228, 22, Color{46, 72, 88, 255});
-    DrawText(TextFormat("button1 %s  button2 %s",
-                        lastGoodFrame.button1Pressed ? "pressed" : "up",
-                        lastGoodFrame.button2Pressed ? "pressed" : "up"),
-             screenWidth - 420, 256, 22, Color{46, 72, 88, 255});
+    DrawHardwareTest(lastGoodFrame, displayAxis, sourceAngleDeg, centeredAngleDeg,
+                     steeringAngleDeg, normalizedValue, hasFreshPackets, hasAnyPacket,
+                     udpReady, localIpText, screenWidth, screenHeight);
 
     EndDrawing();
   }
 
+  UnloadGameAudio(&gameAudio);
   UnloadGameAssets(&gameAssets);
+  if (IsAudioDeviceReady()) {
+    CloseAudioDevice();
+  }
   CloseWindow();
   return 0;
 }
