@@ -39,11 +39,23 @@ Extra controller I/O for the current UDP POC:
 | `button2` | `D2` | button to `GND`, firmware uses `INPUT_PULLUP` |
 | status LED | `D10` | `D10` -> resistor -> LED -> `GND` |
 
+Status LED wiring notes:
+
+- A `330 ohm` resistor is a good default for a normal green LED on `3.3V`.
+- The `560 ohm` resistor with `green-blue-brown-gold` bands is also safe; it will just be dimmer.
+- The resistor can go on either side of the LED and has no direction.
+- The LED does have direction: long leg / round side is the anode and goes toward `D10`; short leg / flat side is the cathode and goes to `GND`.
+
 Status LED behavior:
 
-- slow breathing: setup is still in progress, including startup delay, BNO055 init, or Wi-Fi connection
+- slow breathing: setup is still in progress, starting as soon as the sketch boots
+- brief off beat, then rapid flash for about `0.5` seconds: setup completed and Wi-Fi connected
 - solid: runtime is healthy and the controller has started transmitting data
-- fast flash: error state, such as BNO055 not detected or UDP/Wi-Fi send trouble
+- `500ms` on/off blink: error state, such as BNO055 not detected or UDP/Wi-Fi send trouble
+
+The status LED is driven by a millis-based state machine rather than blocking LED animation delays.
+
+Set `kSerialDebugEnabled` near the top of the UDP firmware sketch to `false` for live use. This disables Serial output and skips troubleshooting-only scans/reports.
 
 ## Arduino IDE Setup
 

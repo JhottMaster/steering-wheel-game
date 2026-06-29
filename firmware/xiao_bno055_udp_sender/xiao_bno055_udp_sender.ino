@@ -14,15 +14,26 @@ constexpr int kSclPin = D5;
 constexpr int kButton1Pin = D1;
 constexpr int kButton2Pin = D2;
 constexpr int kStatusLedPin = D10;
+constexpr int kSdaGpioNumber = 6;
+constexpr int kSclGpioNumber = 7;
+constexpr int kButton1GpioNumber = 3;
+constexpr int kButton2GpioNumber = 4;
+constexpr int kStatusLedGpioNumber = 10;
+constexpr bool kSerialDebugEnabled = true;
 constexpr uint32_t kBaudRate = 115200;
 constexpr uint32_t kStartupQuietMs = 4000;
 constexpr uint32_t kI2cClockHz = 100000;
 constexpr uint32_t kPacketIntervalMs = 33;
 constexpr uint32_t kWifiConnectTimeoutMs = 12000;
+constexpr uint32_t kWifiScanTimeoutMs = 8000;
 constexpr uint32_t kWifiRetryDelayMs = 3000;
 constexpr uint32_t kStatusLedBreathPeriodMs = 2200;
 constexpr uint32_t kStatusLedBreathStepMs = 25;
-constexpr uint32_t kStatusLedFastFlashMs = 120;
+constexpr uint32_t kStatusLedErrorFlashMs = 500;
+constexpr uint32_t kStatusLedSetupCompleteFlashMs = 500;
+constexpr uint32_t kStatusLedSetupCompleteToggleMs = 50;
+constexpr uint32_t kStatusLedSetupCompleteBlankMs = 100;
+constexpr uint32_t kHealthReportIntervalMs = 5000;
 constexpr float kMinAngleDeltaDeg = 0.5f;
 uint32_t wifiAttemptCount = 0;
 uint32_t udpSendCount = 0;
@@ -36,6 +47,51 @@ float lastSentRoll = 0.0f;
 float lastSentPitch = 0.0f;
 bool lastSentButton1Pressed = false;
 bool lastSentButton2Pressed = false;
+bool hasLastReportedButtons = false;
+bool lastReportedButton1Pressed = false;
+bool lastReportedButton2Pressed = false;
+uint32_t lastHealthReportMs = 0;
+
+enum class StatusLedMode {
+  kSetupBreathing,
+  kSetupCompleteFlash,
+  kRuntimeSolid,
+  kErrorBlink,
+};
+
+StatusLedMode statusLedMode = StatusLedMode::kSetupBreathing;
+uint32_t statusLedModeStartMs = 0;
+bool runtimeSolidPending = false;
+
+class DebugSerialProxy {
+ public:
+  void begin(uint32_t baudRate) const {
+    if (kSerialDebugEnabled) {
+      ::Serial.begin(baudRate);
+    }
+  }
+
+  explicit operator bool() const {
+    return !kSerialDebugEnabled || static_cast<bool>(::Serial);
+  }
+
+  template <typename... Args>
+  void print(Args... args) const {
+    if (kSerialDebugEnabled) {
+      ::Serial.print(args...);
+    }
+  }
+
+  template <typename... Args>
+  void println(Args... args) const {
+    if (kSerialDebugEnabled) {
+      ::Serial.println(args...);
+    }
+  }
+};
+
+DebugSerialProxy DebugSerial;
+#define Serial DebugSerial
 
 const char* wifiStatusToString(wl_status_t status) {
   switch (status) {
@@ -85,42 +141,254 @@ void updateSetupStatusLed(uint32_t now) {
   setStatusLedBrightness(breathingBrightness(now));
 }
 
-void breatheStatusLedFor(uint32_t durationMs) {
-  const uint32_t startMs = millis();
-  uint32_t lastBreathStepMs = 0;
-  while (millis() - startMs < durationMs) {
-    const uint32_t now = millis();
-    if (now - lastBreathStepMs >= kStatusLedBreathStepMs) {
+void setStatusLedMode(StatusLedMode mode, uint32_t now) {
+  statusLedMode = mode;
+  statusLedModeStartMs = now;
+  if (mode == StatusLedMode::kRuntimeSolid) {
+    runtimeSolidPending = false;
+  }
+}
+
+void requestSetupCompleteFlash(uint32_t now) {
+  runtimeSolidPending = false;
+  setStatusLedMode(StatusLedMode::kSetupCompleteFlash, now);
+}
+
+void requestRuntimeSolid(uint32_t now) {
+  if (statusLedMode == StatusLedMode::kSetupCompleteFlash) {
+    runtimeSolidPending = true;
+    return;
+  }
+
+  setStatusLedMode(StatusLedMode::kRuntimeSolid, now);
+}
+
+void requestErrorBlink(uint32_t now) {
+  setStatusLedMode(StatusLedMode::kErrorBlink, now);
+}
+
+void updateStatusLed(uint32_t now) {
+  switch (statusLedMode) {
+    case StatusLedMode::kSetupBreathing:
       updateSetupStatusLed(now);
-      lastBreathStepMs = now;
+      break;
+
+    case StatusLedMode::kSetupCompleteFlash: {
+      const uint32_t elapsedMs = now - statusLedModeStartMs;
+      if (elapsedMs < kStatusLedSetupCompleteBlankMs) {
+        setStatusLed(false);
+      } else if (elapsedMs < kStatusLedSetupCompleteBlankMs + kStatusLedSetupCompleteFlashMs) {
+        const uint32_t flashElapsedMs = elapsedMs - kStatusLedSetupCompleteBlankMs;
+        setStatusLed((flashElapsedMs / kStatusLedSetupCompleteToggleMs) % 2 == 0);
+      } else if (runtimeSolidPending) {
+        setStatusLedMode(StatusLedMode::kRuntimeSolid, now);
+        setStatusLed(true);
+      } else {
+        setStatusLed(false);
+      }
+      break;
     }
+
+    case StatusLedMode::kRuntimeSolid:
+      setStatusLed(true);
+      break;
+
+    case StatusLedMode::kErrorBlink:
+      setStatusLed(((now - statusLedModeStartMs) / kStatusLedErrorFlashMs) % 2 == 0);
+      break;
+  }
+}
+
+void waitWithStatusLed(uint32_t durationMs) {
+  const uint32_t startMs = millis();
+  while (millis() - startMs < durationMs) {
+    updateStatusLed(millis());
     delay(5);
   }
 }
 
-void fastFlashStatusLed(uint8_t flashCount) {
-  for (uint8_t i = 0; i < flashCount; ++i) {
-    setStatusLed(true);
-    delay(kStatusLedFastFlashMs);
-    setStatusLed(false);
-    delay(kStatusLedFastFlashMs);
+void showErrorStatusLedFor(uint32_t durationMs) {
+  requestErrorBlink(millis());
+  waitWithStatusLed(durationMs);
+  setStatusLedMode(StatusLedMode::kSetupBreathing, millis());
+}
+
+void blinkStatusLedForever() {
+  requestErrorBlink(millis());
+  while (true) {
+    updateStatusLed(millis());
+    delay(5);
   }
 }
 
-void blinkStatusLedForever(uint32_t intervalMs) {
-  while (true) {
-    setStatusLed(true);
-    delay(intervalMs);
-    setStatusLed(false);
-    delay(intervalMs);
+void printPressedState(bool pressed) {
+  Serial.print(pressed ? "pressed" : "released");
+}
+
+void printControllerPinout() {
+  Serial.println("Controller pin map:");
+  Serial.print("  BNO055 SDA: D4 / GPIO ");
+  Serial.println(kSdaGpioNumber);
+  Serial.print("  BNO055 SCL: D5 / GPIO ");
+  Serial.println(kSclGpioNumber);
+  Serial.print("  button1: D1 / GPIO ");
+  Serial.print(kButton1GpioNumber);
+  Serial.println(" -> button -> GND, INPUT_PULLUP");
+  Serial.print("  button2: D2 / GPIO ");
+  Serial.print(kButton2GpioNumber);
+  Serial.println(" -> button -> GND, INPUT_PULLUP");
+  Serial.print("  status LED: D10 / GPIO ");
+  Serial.print(kStatusLedGpioNumber);
+  Serial.println(" -> resistor -> LED anode, LED cathode -> GND");
+}
+
+void printButtonSnapshot(const char* prefix, bool button1Pressed, bool button2Pressed) {
+  Serial.print(prefix);
+  Serial.print("button1=");
+  printPressedState(button1Pressed);
+  Serial.print(", button2=");
+  printPressedState(button2Pressed);
+  Serial.println();
+}
+
+void reportButtonChanges(bool button1Pressed, bool button2Pressed) {
+  if (!kSerialDebugEnabled) {
+    return;
   }
+
+  if (hasLastReportedButtons && lastReportedButton1Pressed == button1Pressed &&
+      lastReportedButton2Pressed == button2Pressed) {
+    return;
+  }
+
+  printButtonSnapshot("Button state changed: ", button1Pressed, button2Pressed);
+  hasLastReportedButtons = true;
+  lastReportedButton1Pressed = button1Pressed;
+  lastReportedButton2Pressed = button2Pressed;
+}
+
+void printI2cScan() {
+  if (!kSerialDebugEnabled) {
+    return;
+  }
+
+  Serial.println("Scanning I2C bus...");
+  uint8_t deviceCount = 0;
+  for (uint8_t address = 1; address < 127; ++address) {
+    Wire.beginTransmission(address);
+    const uint8_t error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print("  found device at 0x");
+      if (address < 16) {
+        Serial.print("0");
+      }
+      Serial.println(address, HEX);
+      ++deviceCount;
+    } else if (error == 4) {
+      Serial.print("  unknown I2C error at 0x");
+      if (address < 16) {
+        Serial.print("0");
+      }
+      Serial.println(address, HEX);
+    }
+  }
+
+  if (deviceCount == 0) {
+    Serial.println("  no I2C devices found; check 3V3, GND, SDA, and SCL wiring");
+  }
+}
+
+void printBnoDetails() {
+  if (!kSerialDebugEnabled) {
+    return;
+  }
+
+  sensor_t sensor;
+  bno.getSensor(&sensor);
+  Serial.println("BNO055 details:");
+  Serial.print("  sensor: ");
+  Serial.println(sensor.name);
+  Serial.print("  driver version: ");
+  Serial.println(sensor.version);
+  Serial.print("  sensor id: ");
+  Serial.println(sensor.sensor_id);
+  Serial.print("  max value: ");
+  Serial.println(sensor.max_value);
+  Serial.print("  min value: ");
+  Serial.println(sensor.min_value);
+  Serial.print("  resolution: ");
+  Serial.println(sensor.resolution);
+}
+
+void printRuntimeHealth(uint32_t now, float heading, float roll, float pitch,
+                        bool button1Pressed, bool button2Pressed) {
+  if (!kSerialDebugEnabled) {
+    return;
+  }
+
+  if (lastHealthReportMs != 0 && now - lastHealthReportMs < kHealthReportIntervalMs) {
+    return;
+  }
+  lastHealthReportMs = now;
+
+  uint8_t systemCalibration = 0;
+  uint8_t gyroCalibration = 0;
+  uint8_t accelCalibration = 0;
+  uint8_t magCalibration = 0;
+  bno.getCalibration(&systemCalibration, &gyroCalibration, &accelCalibration, &magCalibration);
+
+  Serial.println("Health:");
+  Serial.print("  uptime_ms=");
+  Serial.println(now);
+  Serial.print("  wifi=");
+  Serial.print(wifiStatusToString(WiFi.status()));
+  Serial.print(" rssi=");
+  Serial.print(WiFi.RSSI());
+  Serial.print(" local_ip=");
+  Serial.println(WiFi.localIP());
+  Serial.print("  udp_sent=");
+  Serial.println(udpSendCount);
+  Serial.print("  orientation heading=");
+  Serial.print(heading);
+  Serial.print(" roll=");
+  Serial.print(roll);
+  Serial.print(" pitch=");
+  Serial.println(pitch);
+  Serial.print("  calibration sys=");
+  Serial.print(systemCalibration);
+  Serial.print(" gyro=");
+  Serial.print(gyroCalibration);
+  Serial.print(" accel=");
+  Serial.print(accelCalibration);
+  Serial.print(" mag=");
+  Serial.println(magCalibration);
+  printButtonSnapshot("  buttons ", button1Pressed, button2Pressed);
 }
 
 void printVisibleNetworks() {
+  if (!kSerialDebugEnabled) {
+    return;
+  }
+
   Serial.println("Scanning for visible Wi-Fi networks...");
-  const int networkCount = WiFi.scanNetworks();
+  WiFi.scanNetworks(true);
+  const uint32_t scanStartMs = millis();
+  int networkCount = WiFi.scanComplete();
+  while (networkCount == -1 && millis() - scanStartMs < kWifiScanTimeoutMs) {
+    updateStatusLed(millis());
+    delay(5);
+    networkCount = WiFi.scanComplete();
+  }
+
+  if (networkCount == -1) {
+    Serial.println("Wi-Fi scan timed out.");
+    WiFi.scanDelete();
+    return;
+  }
+
   if (networkCount <= 0) {
     Serial.println("No Wi-Fi networks found.");
+    WiFi.scanDelete();
     return;
   }
 
@@ -140,6 +408,7 @@ void printVisibleNetworks() {
     Serial.print(" ");
     Serial.println(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "secured");
   }
+  WiFi.scanDelete();
 }
 
 void printWifiStatusLine(const char* prefix, wl_status_t status) {
@@ -153,11 +422,11 @@ void printWifiStatusLine(const char* prefix, wl_status_t status) {
 void resetWifiRadio() {
   Serial.println("Resetting Wi-Fi radio...");
   WiFi.disconnect(true, true);
-  delay(250);
+  waitWithStatusLed(250);
   WiFi.mode(WIFI_OFF);
-  delay(250);
+  waitWithStatusLed(250);
   WiFi.mode(WIFI_STA);
-  delay(250);
+  waitWithStatusLed(250);
 }
 
 bool connectToWifi() {
@@ -183,7 +452,6 @@ bool connectToWifi() {
   WiFi.setHostname(kWifiHostname);
   WiFi.begin(kWifiSecretsSsid, kWifiSecretsPassword);
   const uint32_t connectStartMs = millis();
-  uint32_t lastBreathStepMs = 0;
   uint32_t lastProgressDotMs = 0;
   wl_status_t lastStatus = WiFi.status();
   printWifiStatusLine("Initial Wi-Fi status: ", lastStatus);
@@ -198,6 +466,8 @@ bool connectToWifi() {
       Serial.print("Signal strength: ");
       Serial.print(WiFi.RSSI());
       Serial.println(" dBm");
+      requestSetupCompleteFlash(now);
+      Serial.println("Status LED: setup complete flash.");
       return true;
     }
 
@@ -212,10 +482,7 @@ bool connectToWifi() {
       Serial.print(".");
       lastProgressDotMs = now;
     }
-    if (now - lastBreathStepMs >= kStatusLedBreathStepMs) {
-      updateSetupStatusLed(now);
-      lastBreathStepMs = now;
-    }
+    updateStatusLed(now);
     delay(5);
   }
 
@@ -224,7 +491,7 @@ bool connectToWifi() {
   printWifiStatusLine("Final Wi-Fi status: ", WiFi.status());
   printVisibleNetworks();
   Serial.println("If this keeps failing, test with a simple 2.4 GHz phone hotspot to separate router issues from board issues.");
-  fastFlashStatusLed(8);
+  showErrorStatusLedFor(4000);
   return false;
 }
 }  // namespace
@@ -238,40 +505,50 @@ void setup() {
   Serial.begin(kBaudRate);
   const uint32_t bootStartMs = millis();
   while (!Serial && (millis() - bootStartMs) < 1500) {
-    delay(10);
+    updateStatusLed(millis());
+    delay(5);
   }
 
   Serial.println();
   Serial.println("XIAO ESP32-C3 + BNO055 UDP sender");
+  printControllerPinout();
+  printButtonSnapshot("Initial buttons: ", readButtonPressed(kButton1Pin), readButtonPressed(kButton2Pin));
   Serial.print("Quiet startup window: ");
   Serial.print(kStartupQuietMs);
   Serial.println(" ms");
-  breatheStatusLedFor(kStartupQuietMs);
+  waitWithStatusLed(kStartupQuietMs);
 
   Wire.begin(kSdaPin, kSclPin);
   Wire.setClock(kI2cClockHz);
+  Serial.print("I2C started at ");
+  Serial.print(kI2cClockHz);
+  Serial.println(" Hz.");
+  printI2cScan();
 
   Serial.println("Initializing BNO055...");
-  updateSetupStatusLed(millis());
+  updateStatusLed(millis());
   if (!bno.begin()) {
     Serial.println("BNO055 not detected.");
-    blinkStatusLedForever(kStatusLedFastFlashMs);
+    blinkStatusLedForever();
   }
 
-  breatheStatusLedFor(1000);
+  waitWithStatusLed(1000);
   bno.setExtCrystalUse(true);
   Serial.println("BNO055 detected.");
+  printBnoDetails();
 
   while (!connectToWifi()) {
     Serial.print("Retrying Wi-Fi connection in ");
     Serial.print(kWifiRetryDelayMs);
     Serial.println(" ms...");
-    delay(kWifiRetryDelayMs);
+    waitWithStatusLed(kWifiRetryDelayMs);
   }
 }
 
 void loop() {
   const uint32_t now = millis();
+  updateStatusLed(now);
+
   if (now - lastPacketMs < kPacketIntervalMs) {
     return;
   }
@@ -283,6 +560,8 @@ void loop() {
   const float pitch = euler.y();
   const bool button1Pressed = readButtonPressed(kButton1Pin);
   const bool button2Pressed = readButtonPressed(kButton2Pin);
+  reportButtonChanges(button1Pressed, button2Pressed);
+  printRuntimeHealth(now, heading, roll, pitch, button1Pressed, button2Pressed);
 
   const bool shouldSend =
       !hasLastSentFrame || angleChangedEnough(lastSentHeading, heading) ||
@@ -302,20 +581,20 @@ void loop() {
       Serial.print("Retrying Wi-Fi connection in ");
       Serial.print(kWifiRetryDelayMs);
       Serial.println(" ms...");
-      delay(kWifiRetryDelayMs);
+      waitWithStatusLed(kWifiRetryDelayMs);
     }
   }
 
   if (!udp.beginPacket(kWifiSecretsHostIp, kHostPort)) {
     Serial.println("Failed to begin UDP packet.");
-    fastFlashStatusLed(5);
+    showErrorStatusLedFor(3000);
     return;
   }
 
   udp.write(reinterpret_cast<const uint8_t*>(packet), strlen(packet));
   if (!udp.endPacket()) {
     Serial.println("Failed to send UDP packet.");
-    fastFlashStatusLed(5);
+    showErrorStatusLedFor(3000);
     return;
   }
 
@@ -326,7 +605,7 @@ void loop() {
   lastSentPitch = pitch;
   lastSentButton1Pressed = button1Pressed;
   lastSentButton2Pressed = button2Pressed;
-  setStatusLed(true);
+  requestRuntimeSolid(millis());
   Serial.print("UDP #");
   Serial.print(udpSendCount);
   Serial.print(" sent to ");

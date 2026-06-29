@@ -49,11 +49,17 @@ constexpr float kVisibleAngleRangeDeg = 45.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
 constexpr float kPacketTimeoutSeconds = 2.0f;
 constexpr float kDegToRad = 0.017453292519943295769f;
-constexpr float kSteeringDirection = -1.0f;
+constexpr float kSteeringDirection = 1.0f;
 
 enum class DisplayAxis {
   kRoll,
   kPitch,
+  kYaw,
+};
+
+enum class AppMode {
+  kGame,
+  kHardwareTest,
 };
 
 struct SensorFrame {
@@ -195,11 +201,29 @@ bool PollLatestSensorFrame(UdpReceiver* receiver, SensorFrame* frame) {
 }
 
 float GetAxisDegrees(DisplayAxis axis, const SensorFrame& frame) {
-  return (axis == DisplayAxis::kRoll) ? frame.roll : frame.pitch;
+  switch (axis) {
+    case DisplayAxis::kRoll:
+      return frame.roll;
+    case DisplayAxis::kPitch:
+      return frame.pitch;
+    case DisplayAxis::kYaw:
+      return frame.heading;
+  }
+
+  return frame.pitch;
 }
 
 const char* GetAxisLabel(DisplayAxis axis) {
-  return (axis == DisplayAxis::kRoll) ? "roll" : "pitch";
+  switch (axis) {
+    case DisplayAxis::kRoll:
+      return "roll";
+    case DisplayAxis::kPitch:
+      return "pitch";
+    case DisplayAxis::kYaw:
+      return "yaw";
+  }
+
+  return "pitch";
 }
 
 float ClampToUnit(float value) {
@@ -235,6 +259,23 @@ void DrawSteeringWheel(Vector2 center, float radius, float rotationDeg) {
   DrawCircleV(center, radius * 0.14f, hubColor);
   DrawCircleV(PointOnCircle(center, radius * 0.87f, rotationDeg - 90.0f), radius * 0.075f,
               accentColor);
+}
+
+void DrawButtonLamp(Vector2 center, float radius, bool pressed, Color dimColor, Color litColor,
+                    const char* label) {
+  const Color lampColor = pressed ? litColor : dimColor;
+  DrawCircleV(Vector2{center.x + 4.0f, center.y + 5.0f}, radius + 4.0f,
+              Color{38, 46, 49, 85});
+  DrawCircleV(center, radius + 5.0f, Color{46, 72, 88, 255});
+  DrawCircleV(center, radius, lampColor);
+  if (pressed) {
+    DrawCircleV(Vector2{center.x - radius * 0.25f, center.y - radius * 0.25f},
+                radius * 0.30f, Color{255, 255, 255, 95});
+  }
+
+  const int labelWidth = MeasureText(label, 20);
+  DrawText(label, static_cast<int>(center.x - labelWidth / 2), static_cast<int>(center.y + radius + 12.0f),
+           20, Color{46, 72, 88, 255});
 }
 
 std::vector<std::string> GetLocalIpv4Addresses() {
@@ -316,15 +357,23 @@ int main() {
   SensorFrame centerFrame;
   auto lastPacketTime = std::chrono::steady_clock::time_point{};
   DisplayAxis displayAxis = DisplayAxis::kPitch;
+  AppMode appMode = AppMode::kGame;
   bool hasCenterFrame = false;
   float manualAngleDeg = 0.0f;
 
   while (!WindowShouldClose()) {
-    if (IsKeyPressed(KEY_R)) {
+    if (IsKeyPressed(KEY_T)) {
+      appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
+    }
+
+    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
       displayAxis = DisplayAxis::kRoll;
     }
-    if (IsKeyPressed(KEY_P)) {
+    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_P)) {
       displayAxis = DisplayAxis::kPitch;
+    }
+    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_Y)) {
+      displayAxis = DisplayAxis::kYaw;
     }
 
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
@@ -350,7 +399,7 @@ int main() {
     if (!hasFreshPackets && !hasAnyPacket) {
       sourceAngleDeg = manualAngleDeg;
     }
-    if (IsKeyPressed(KEY_SPACE)) {
+    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_SPACE)) {
       if (hasAnyPacket) {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
@@ -373,13 +422,26 @@ int main() {
     const float wheelRadius = std::min(screenWidth, screenHeight) * 0.28f;
 
     BeginDrawing();
-    ClearBackground(Color{242, 239, 228, 255});
+    if (appMode == AppMode::kGame) {
+      ClearBackground(Color{18, 28, 32, 255});
+      DrawText("Game mode placeholder", 40, 32, 30, Color{214, 222, 210, 255});
+      DrawText("Press T for hardware test mode", 40, 72, 22, Color{133, 154, 145, 255});
+      EndDrawing();
+      continue;
+    }
 
+    ClearBackground(Color{242, 239, 228, 255});
     DrawText("Toddler Steering Wheel POC", 40, 28, 34, Color{46, 72, 88, 255});
-    DrawText("P: pitch steering   R: roll debug   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
+    DrawText("T: game/test   P: pitch   R: roll   Y: yaw   SPACE: center   A/D or arrows: fallback input", 40, 70, 22,
              Color{77, 92, 103, 255});
 
     DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
+    DrawButtonLamp(Vector2{center.x - wheelRadius * 1.35f, center.y}, wheelRadius * 0.16f,
+                   lastGoodFrame.button2Pressed, Color{92, 35, 34, 255},
+                   Color{237, 54, 43, 255}, "button 2");
+    DrawButtonLamp(Vector2{center.x + wheelRadius * 1.35f, center.y}, wheelRadius * 0.16f,
+                   lastGoodFrame.button1Pressed, Color{35, 84, 50, 255},
+                   Color{52, 222, 98, 255}, "button 1");
 
     DrawText(TextFormat("axis: %s", GetAxisLabel(displayAxis)), 40, screenHeight - 150, 24,
              Color{46, 72, 88, 255});
@@ -409,6 +471,14 @@ int main() {
              udpReady ? Color{59, 120, 87, 255} : Color{184, 72, 49, 255});
     DrawText("Host IPv4:", screenWidth - 420, 128, 22, Color{77, 92, 103, 255});
     DrawText(localIpText.c_str(), screenWidth - 420, 156, 22, Color{46, 72, 88, 255});
+    DrawText("Latest packet:", screenWidth - 420, 200, 22, Color{77, 92, 103, 255});
+    DrawText(TextFormat("roll %.1f  pitch %.1f  heading %.1f",
+                        lastGoodFrame.roll, lastGoodFrame.pitch, lastGoodFrame.heading),
+             screenWidth - 420, 228, 22, Color{46, 72, 88, 255});
+    DrawText(TextFormat("button1 %s  button2 %s",
+                        lastGoodFrame.button1Pressed ? "pressed" : "up",
+                        lastGoodFrame.button2Pressed ? "pressed" : "up"),
+             screenWidth - 420, 256, 22, Color{46, 72, 88, 255});
 
     EndDrawing();
   }

@@ -12,14 +12,19 @@ Minimal `raylib` app that listens for steering sensor data over `UDP` and visual
 roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 ```
 
-- renders a steering wheel that turns with reversed `pitch` by default
-- displays the latest two button states from the controller
+- defaults to a blank game placeholder screen
+- press `T` to show the hardware test dashboard
+- renders a steering wheel that turns with `pitch` by default in test mode
+- displays the latest `roll`, `pitch`, `heading`, and two button states from the controller
+- shows `button2` as the red left lamp and `button1` as the green right lamp in test mode
 - falls back to keyboard input if no recent packets arrive
 
 ## Controls
 
+- `T`: toggle game placeholder / hardware test dashboard
 - `P`: use `pitch` for steering
 - `R`: use `roll` for debug comparison
+- `Y`: use `yaw` / `heading` for steering
 - `SPACE`: set the current sensor orientation as center
 - `A` / `D` or left / right arrows: keyboard fallback input
 

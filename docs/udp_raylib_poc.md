@@ -9,7 +9,7 @@ This proof of concept connects the current hardware bring-up to a very small cro
 
 ## Goal
 
-Show a 2D steering wheel on screen that rotates with reversed `pitch` from the BNO055.
+Show a blank game placeholder by default, with a `T`-toggle hardware test dashboard that visualizes BNO055 orientation and button input.
 
 ## Repo Layout
 
@@ -23,7 +23,7 @@ Show a 2D steering wheel on screen that rotates with reversed `pitch` from the B
 1. The XIAO reads fused orientation data from the BNO055.
 2. The XIAO sends packets over Wi-Fi using `UDP`.
 3. The `raylib` app listens on port `4210`.
-4. The app rotates an on-screen steering wheel based on incoming `pitch`.
+4. In hardware test mode, the app rotates an on-screen steering wheel based on the selected incoming orientation axis.
 
 Packet format:
 
@@ -56,13 +56,29 @@ Important note:
 - the firmware sets a friendlier Wi-Fi hostname: `steering-wheel-poc-esp32c3`
 - the serial monitor prints explicit `UDP #... sent to ...` lines for successful sends
 
+## Serial Diagnostics
+
+Open Serial Monitor at `115200` after upload. The firmware prints:
+
+- the expected XIAO pin map for `BNO055`, buttons, and status LED
+- initial button states, followed by button state changes only when they happen
+- an `I2C` scan before initializing the BNO055; the BNO055 should usually appear at `0x28`
+- BNO055 sensor details after successful detection
+- visible Wi-Fi networks, connection status changes, local IP, and signal strength
+- a compact `Health:` block every `5` seconds with Wi-Fi status, UDP send count, orientation, calibration, and button states
+
+Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for live use. That disables Serial output and skips troubleshooting-only scans/reports while keeping the controller, Wi-Fi, UDP packets, buttons, and status LED behavior active.
+
 ## Desktop App Behavior
 
+- `T` toggles between the blank game placeholder and hardware test dashboard
 - `P` uses `pitch` for steering
 - `R` uses `roll` for debug comparison
-- `SPACE` captures the current sensor orientation as the center, so switching between `roll` and `pitch` stays calibrated
+- `Y` uses `yaw` / `heading` for debug comparison
+- `SPACE` captures the current sensor orientation as the center, so switching between `roll`, `pitch`, and `yaw` stays calibrated
 - `A` / `D` or left / right arrows provide a keyboard fallback when packets are not arriving
-- the app displays the latest `button1` / `button2` states from UDP packets
+- the app displays the latest `roll`, `pitch`, `heading`, `button1`, and `button2` values from UDP packets
+- the hardware test dashboard shows `button2` as a red lamp on the left and `button1` as a green lamp on the right
 - the app shows the host IPv4 address in the window so it is easy to copy into `wifi_secrets.h`
 - the app keeps the last received value on screen even if packets go stale
 
@@ -78,11 +94,21 @@ The current XIAO ESP32-C3 firmware uses:
 | `button2` | `D2` | button to `GND`, uses `INPUT_PULLUP` |
 | status LED | `D10` | GPIO -> resistor -> LED -> `GND` |
 
+Status LED wiring notes:
+
+- A `330 ohm` resistor is a good default for a normal green LED on `3.3V`.
+- The `560 ohm` resistor with `green-blue-brown-gold` bands is also safe; it will just be dimmer.
+- The resistor can go on either side of the LED and has no direction.
+- The LED does have direction: long leg / round side is the anode and goes toward `D10`; short leg / flat side is the cathode and goes to `GND`.
+
 Status LED states:
 
-- slow breathing: setup is still in progress
+- slow breathing: setup is still in progress, starting as soon as the sketch boots
+- brief off beat, then rapid flash for about `0.5` seconds: setup completed and Wi-Fi connected
 - solid: runtime is healthy and data transmission has started
-- fast flash: error state
+- `500ms` on/off blink: error state
+
+The status LED is driven by a millis-based state machine. Wi-Fi setup, retry waits, and debug Wi-Fi scanning all call the LED updater instead of playing blocking LED animations with long `delay(...)` calls.
 
 ## Build Notes
 
