@@ -24,6 +24,10 @@ constexpr int kServerDiscoveryPort = 4211;
 constexpr float kServerBeaconIntervalSeconds = 3.0f;
 constexpr float kServerBeaconStartDelaySeconds = 5.0f;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
+constexpr float kGameSteeringDeadzoneDeg = 2.0f;
+constexpr float kGameSteeringDeadzoneBlendDeg = 8.0f;
+constexpr float kGameSteeringEarlyResponseFraction = 0.85f;
+constexpr float kGameSteeringEarlyRangeDeg = 90.0f;
 constexpr float kGameSteeringFullLockDeg = 270.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
 constexpr float kPacketTimeoutSeconds = 2.0f;
@@ -53,6 +57,39 @@ float GetWrappedGameWheelAngleDeg(const SensorFrame& frame, const SensorFrame& c
                                   bool hasCenterFrame) {
   return hasCenterFrame ? GetCenteredAxisDegrees(DisplayAxis::kPitch, frame, centerFrame)
                         : GetAxisDegrees(DisplayAxis::kPitch, frame);
+}
+
+float ApplyGameSteeringResponseCurve(float wheelAngleDeg) {
+  const float sign = wheelAngleDeg < 0.0f ? -1.0f : 1.0f;
+  const float absoluteAngleDeg = std::fabs(wheelAngleDeg);
+  if (absoluteAngleDeg <= kGameSteeringDeadzoneDeg) {
+    return 0.0f;
+  }
+
+  const float deadzoneBlendEndDeg = kGameSteeringDeadzoneDeg + kGameSteeringDeadzoneBlendDeg;
+  float softenedAngleDeg = absoluteAngleDeg;
+  if (absoluteAngleDeg < deadzoneBlendEndDeg) {
+    const float t =
+        (absoluteAngleDeg - kGameSteeringDeadzoneDeg) / kGameSteeringDeadzoneBlendDeg;
+    const float smoothedT = t * t * (3.0f - 2.0f * t);
+    softenedAngleDeg = smoothedT * deadzoneBlendEndDeg;
+  }
+
+  const float clampedAngleDeg = std::min(softenedAngleDeg, kGameSteeringFullLockDeg);
+
+  if (clampedAngleDeg <= kGameSteeringEarlyRangeDeg) {
+    const float earlyFraction = clampedAngleDeg / kGameSteeringEarlyRangeDeg;
+    return sign * earlyFraction * kGameSteeringEarlyResponseFraction;
+  }
+
+  const float remainingAngleDeg = kGameSteeringFullLockDeg - kGameSteeringEarlyRangeDeg;
+  const float trailingFraction =
+      remainingAngleDeg <= 0.0f ? 1.0f
+                                : (clampedAngleDeg - kGameSteeringEarlyRangeDeg) / remainingAngleDeg;
+  const float normalized =
+      kGameSteeringEarlyResponseFraction +
+      trailingFraction * (1.0f - kGameSteeringEarlyResponseFraction);
+  return sign * normalized;
 }
 }  // namespace
 
@@ -250,7 +287,7 @@ int main() {
 
     const float gameSourceAngleDeg = hasAnyPacket ? gameAccumulatedAngleDeg : manualAngleDeg;
     const float gameSteeringInput =
-        ClampUnit((gameSourceAngleDeg * kGameSteeringDirection) / kGameSteeringFullLockDeg);
+        ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
     const GameButtons gameButtons = {
         (hasFreshPackets && lastGoodFrame.button1Pressed) ||
             (!hasFreshPackets && (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))),

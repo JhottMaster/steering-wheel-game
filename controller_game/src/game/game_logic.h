@@ -16,6 +16,8 @@ constexpr float kGameManualCoastDrag = 55.0f;
 constexpr float kGameManualAcceleration = 165.0f;
 constexpr float kGameManualBrake = 245.0f;
 constexpr float kGameManualReverseAcceleration = 135.0f;
+constexpr float kGameManualReverseEngageDelaySeconds = 1.0f;
+constexpr float kGameStoppedSpeedThreshold = 4.0f;
 constexpr float kGameMaxTurnRateDegPerSecond = 135.0f;
 constexpr float kGameCoinPickupRadius = 58.0f;
 constexpr float kGameDegToRad = 0.017453292519943295769f;
@@ -64,6 +66,7 @@ struct GameState {
   GameVec2 carPosition = {kGameCarStartX, kGameCarStartY};
   float carHeadingDeg = 0.0f;
   float carSpeed = kGameAutoSpeed;
+  float stoppedHoldSeconds = 0.0f;
   DriveMode driveMode = DriveMode::kAuto;
   int score = 0;
   std::array<CoinState, 8> coins = {{
@@ -243,6 +246,20 @@ inline void CollectNearbyCoins(GameState* game) {
   }
 }
 
+inline float ComputeSteeringSpeedFactor(float carSpeed) {
+  const float normalizedSpeed = std::clamp(std::fabs(carSpeed) / kGameMaxSpeed, 0.0f, 1.0f);
+  return 1.05f - normalizedSpeed * 0.30f;
+}
+
+inline float ComputeLowSpeedYawFactor(float carSpeed) {
+  const float normalizedSpeed = std::clamp(std::fabs(carSpeed) / 28.0f, 0.0f, 1.0f);
+  return normalizedSpeed * normalizedSpeed;
+}
+
+inline bool IsNearlyStopped(float carSpeed) {
+  return std::fabs(carSpeed) <= kGameStoppedSpeedThreshold;
+}
+
 inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons, float dt) {
   if (dt <= 0.0f) {
     return;
@@ -252,14 +269,24 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
   if (game->driveMode == DriveMode::kAuto) {
     const float speedBlend = std::min(dt * 4.0f, 1.0f);
     game->carSpeed += (kGameAutoSpeed - game->carSpeed) * speedBlend;
+    game->stoppedHoldSeconds = 0.0f;
   } else {
     if (buttons.accelerate) {
       game->carSpeed += kGameManualAcceleration * dt;
+      game->stoppedHoldSeconds = 0.0f;
     }
 
     if (buttons.brake) {
       if (game->carSpeed > 0.0f) {
         game->carSpeed -= kGameManualBrake * dt;
+        if (game->carSpeed < 0.0f) {
+          game->carSpeed = 0.0f;
+        }
+      } else if (IsNearlyStopped(game->carSpeed)) {
+        game->carSpeed = 0.0f;
+        if (game->stoppedHoldSeconds >= kGameManualReverseEngageDelaySeconds) {
+          game->carSpeed -= kGameManualReverseAcceleration * dt;
+        }
       } else {
         game->carSpeed -= kGameManualReverseAcceleration * dt;
       }
@@ -273,10 +300,22 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
       }
     }
     game->carSpeed = std::clamp(game->carSpeed, -kGameMaxReverseSpeed, kGameMaxSpeed);
+    if (buttons.accelerate) {
+      game->stoppedHoldSeconds = 0.0f;
+    } else if (IsNearlyStopped(game->carSpeed)) {
+      game->carSpeed = 0.0f;
+      game->stoppedHoldSeconds += dt;
+    } else {
+      game->stoppedHoldSeconds = 0.0f;
+    }
   }
 
-  const float speedFactor = std::clamp(std::fabs(game->carSpeed) / kGameAutoSpeed, 0.25f, 1.8f);
-  game->carHeadingDeg += clampedSteering * kGameMaxTurnRateDegPerSecond * speedFactor * dt;
+  const float speedFactor = ComputeSteeringSpeedFactor(game->carSpeed);
+  const float lowSpeedYawFactor = ComputeLowSpeedYawFactor(game->carSpeed);
+  const float steeringDirectionFromTravel = game->carSpeed < 0.0f ? -1.0f : 1.0f;
+  game->carHeadingDeg +=
+      clampedSteering * steeringDirectionFromTravel * kGameMaxTurnRateDegPerSecond * speedFactor *
+      lowSpeedYawFactor * dt;
 
   const float headingRad = game->carHeadingDeg * kGameDegToRad;
   game->carPosition.x += std::sin(headingRad) * game->carSpeed * dt;

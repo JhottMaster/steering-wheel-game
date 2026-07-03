@@ -32,7 +32,7 @@ Packet format:
 qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 ```
 
-The current working firmware only sends when the orientation changes enough to matter, rather than streaming every frame while stationary.
+The current firmware sends immediately when orientation or button state changes, and also forces a small heartbeat packet at least every `200ms` so the app can detect stale/disconnected controllers more reliably.
 
 ## Firmware Setup
 
@@ -58,6 +58,7 @@ Important note:
 - the serial monitor prints explicit `UDP #... sent to ...` lines for successful sends
 - after Wi-Fi connects, the controller keeps the status LED in the breathing setup state until it hears a valid server discovery broadcast on UDP `4211`
 - once discovery succeeds, the controller locks onto that sender IP for the rest of the run and stops listening for other servers
+- once runtime starts, the controller sends on input change and also guarantees at least one UDP packet every `200ms`
 
 ## Serial Diagnostics
 
@@ -88,7 +89,10 @@ Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for liv
 - the hardware test dashboard shows `button2` as a red lamp on the left and `button1` as a green lamp on the right
 - the app shows the host IPv4 address in the window so it is easy to confirm which machine is advertising itself on the LAN
 - the app keeps the last received value on screen even if packets go stale
-- if the game has not received controller packets for more than `5` seconds, it sends a small UDP broadcast beacon once per second on port `4211` so a booting controller can discover it
+- on startup, the game immediately sends a small UDP broadcast beacon on port `4211` so a booting controller can discover it
+- once controller packets are flowing, the game stops broadcasting and only resumes if packets have been stale for more than `5` seconds
+- while rediscovering, the game sends the beacon every `3` seconds and shows a disconnected banner in the game view
+- in manual drive mode, the green button accelerates, the red button brakes, and reverse only engages after the car has been fully stopped for about `1` second
 
 ## Game Assets
 
@@ -151,7 +155,7 @@ The POC expects a system `raylib` package discoverable through `pkg-config`.
 2. Confirm Road Carpet Drive loads by default.
 3. Fill in Wi-Fi credentials in `wifi_secrets.h`.
 4. Upload the firmware.
-5. Wait for the game to begin broadcasting discovery beacons if it has not heard from a controller for `5` seconds.
+5. Launch the game first so it begins broadcasting discovery beacons immediately.
 6. Confirm the controller fast-flashes once it locks the server IP, then switches to live `UDP` steering input.
 7. Press `T` to verify the hardware test dashboard.
 

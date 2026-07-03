@@ -47,7 +47,23 @@ void TestManualBrakeCanReverse() {
   GameState game;
   ToggleDriveMode(&game);
   game.carSpeed = 0.0f;
-  UpdateGame(&game, 0.0f, GameButtons{false, true}, 1.0f);
+  UpdateGame(&game, 0.0f, GameButtons{false, false}, 0.5f);
+  assert(game.carSpeed == 0.0f);
+  UpdateGame(&game, 0.0f, GameButtons{false, false}, 0.6f);
+  assert(game.carSpeed == 0.0f);
+  UpdateGame(&game, 0.0f, GameButtons{false, true}, 0.1f);
+  assert(game.carSpeed < 0.0f);
+}
+
+void TestManualBrakeStopsBeforeReverse() {
+  GameState game;
+  ToggleDriveMode(&game);
+  game.carSpeed = 50.0f;
+  UpdateGame(&game, 0.0f, GameButtons{false, true}, 0.25f);
+  assert(game.carSpeed == 0.0f);
+  UpdateGame(&game, 0.0f, GameButtons{false, false}, 0.75f);
+  assert(game.carSpeed == 0.0f);
+  UpdateGame(&game, 0.0f, GameButtons{false, true}, 0.3f);
   assert(game.carSpeed < 0.0f);
 }
 
@@ -67,6 +83,25 @@ void TestCoinCollection() {
   assert(game.coins[0].collected);
   assert(game.score == 1);
 }
+
+void TestSteeringSpeedFactorDropsAtSpeed() {
+  assert(ComputeSteeringSpeedFactor(0.0f) > ComputeSteeringSpeedFactor(kGameMaxSpeed));
+  assert(ComputeSteeringSpeedFactor(kGameMaxSpeed) >= 0.70f);
+}
+
+void TestLowSpeedYawFactorNearZeroWhenStopped() {
+  assert(ComputeLowSpeedYawFactor(0.0f) == 0.0f);
+  assert(ComputeLowSpeedYawFactor(28.0f) >= 0.99f);
+}
+
+void TestReverseSteeringTurnsOppositeDirection() {
+  GameState game;
+  ToggleDriveMode(&game);
+  game.carSpeed = -50.0f;
+  const float startHeading = game.carHeadingDeg;
+  UpdateGame(&game, 1.0f, GameButtons{false, true}, 0.25f);
+  assert(game.carHeadingDeg < startHeading);
+}
 }  // namespace
 
 int main() {
@@ -75,7 +110,11 @@ int main() {
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestManualBrakeCanReverse();
+  TestManualBrakeStopsBeforeReverse();
   TestDriveModeToggle();
   TestCoinCollection();
+  TestSteeringSpeedFactorDropsAtSpeed();
+  TestLowSpeedYawFactorNearZeroWhenStopped();
+  TestReverseSteeringTurnsOppositeDirection();
   return 0;
 }

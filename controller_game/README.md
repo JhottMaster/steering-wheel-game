@@ -22,6 +22,11 @@ Project structure preferences are captured in [`DEVELOPMENT_GUIDELINES.md`](DEVE
 qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 ```
 
+- the current controller firmware sends on input change and also forces a heartbeat packet at least every `200ms`
+- on startup, the game immediately advertises itself over `UDP` broadcast on port `4211` so a controller can discover it
+- once a controller is connected, the game stops broadcasting and only resumes if packets go stale for more than `5` seconds
+- while rediscovering, the game sends a discovery beacon every `3` seconds and shows a disconnected banner in the game view
+
 - defaults to the Road Carpet Drive game
 - press `T` to show the hardware test dashboard
 - drives a toy car around a generated 1024x1024 road-carpet map
@@ -31,20 +36,31 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 - displays the latest quaternion, derived Euler readout, and two button states from the controller
 - shows `button2` as the red left lamp and `button1` as the green right lamp in test mode
 - falls back to keyboard input if no recent packets arrive
+- desktop builds now default to a `1024x768` window to match the Raspberry Pi target layout more closely
 
 ## Controls
 
 - `T`: toggle Road Carpet Drive / hardware test dashboard
 - `A`: toggle auto-drive / button-throttle mode in the game
+- in button-throttle mode, `button1` / `W` accelerates
+- in button-throttle mode, `button2` / `S` brakes to a stop first and only engages reverse after the car has remained stopped for about `1` second
 - `P`: use the sensor pitch-axis twist for steering
 - `R`: use the sensor roll-axis twist for debug comparison
 - `Y`: use the sensor yaw-axis twist for debug comparison
 - `SPACE`: set the current sensor orientation as center
+- controller recenter gesture: hold green (`button1`) and press red (`button2`) `3` times within `1.5` seconds
 - `A` / `D` or left / right arrows: keyboard steering fallback input
 - `W` / up arrow: keyboard acceleration fallback in button-throttle mode
 - `S` / down arrow: keyboard brake fallback in button-throttle mode
 - `F11`: toggle fullscreen on desktop builds
 - `ESC`: quit
+
+## Steering Notes
+
+- gameplay steering uses quaternion-derived twist from the controller, not raw Euler steering angles
+- the game tracks accumulated wheel rotation up to a `270` degree full-lock range instead of flipping direction after a half turn
+- a small deadzone and blended response curve make it less twitchy near center while still giving stronger steering early in the turn
+- reverse steering is automatically inverted so backing up behaves like a real car
 
 ## Assets
 

@@ -26,6 +26,7 @@ constexpr uint32_t kBaudRate = 115200;
 constexpr uint32_t kStartupQuietMs = 4000;
 constexpr uint32_t kI2cClockHz = 100000;
 constexpr uint32_t kPacketIntervalMs = 33;
+constexpr uint32_t kHeartbeatIntervalMs = 200;
 constexpr uint32_t kWifiConnectTimeoutMs = 12000;
 constexpr uint32_t kWifiScanTimeoutMs = 8000;
 constexpr uint32_t kWifiRetryDelayMs = 3000;
@@ -56,6 +57,7 @@ bool hasLastReportedButtons = false;
 bool lastReportedButton1Pressed = false;
 bool lastReportedButton2Pressed = false;
 uint32_t lastHealthReportMs = 0;
+uint32_t lastSuccessfulSendMs = 0;
 IPAddress hostIp;
 bool hasHostIp = false;
 
@@ -531,7 +533,7 @@ bool discoverHost() {
   while (!hasHostIp) {
     const uint32_t now = millis();
     updateStatusLed(now);
-
+Ho
     if (lastDiscoveryHeartbeatMs == 0 ||
         now - lastDiscoveryHeartbeatMs >= kDiscoveryHeartbeatIntervalMs) {
       Serial.print("Still listening for server discovery on UDP ");
@@ -676,7 +678,8 @@ void loop() {
       quaternionComponentChangedEnough(lastSentQuatX, quatX) ||
       quaternionComponentChangedEnough(lastSentQuatY, quatY) ||
       quaternionComponentChangedEnough(lastSentQuatZ, quatZ) ||
-      lastSentButton1Pressed != button1Pressed || lastSentButton2Pressed != button2Pressed;
+      lastSentButton1Pressed != button1Pressed || lastSentButton2Pressed != button2Pressed ||
+      lastSuccessfulSendMs == 0 || now - lastSuccessfulSendMs >= kHeartbeatIntervalMs;
   if (!shouldSend) {
     return;
   }
@@ -715,6 +718,7 @@ void loop() {
   }
 
   ++udpSendCount;
+  lastSuccessfulSendMs = now;
   hasLastSentFrame = true;
   lastSentQuatW = quatW;
   lastSentQuatX = quatX;
