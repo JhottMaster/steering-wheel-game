@@ -43,6 +43,14 @@ void TestManualThrottleAndBrake() {
   assert(game.carSpeed < acceleratedSpeed);
 }
 
+void TestManualBrakeCanReverse() {
+  GameState game;
+  ToggleDriveMode(&game);
+  game.carSpeed = 0.0f;
+  UpdateGame(&game, 0.0f, GameButtons{false, true}, 1.0f);
+  assert(game.carSpeed < 0.0f);
+}
+
 void TestDriveModeToggle() {
   GameState game;
   assert(game.driveMode == DriveMode::kAuto);
@@ -66,6 +74,7 @@ int main() {
   TestCenteredPitchTwist();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
+  TestManualBrakeCanReverse();
   TestDriveModeToggle();
   TestCoinCollection();
   return 0;

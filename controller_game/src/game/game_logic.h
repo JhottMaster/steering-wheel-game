@@ -11,9 +11,11 @@ constexpr float kGameCarStartY = 760.0f;
 constexpr float kGameCarMargin = 48.0f;
 constexpr float kGameAutoSpeed = 95.0f;
 constexpr float kGameMaxSpeed = 190.0f;
+constexpr float kGameMaxReverseSpeed = 110.0f;
 constexpr float kGameManualCoastDrag = 55.0f;
 constexpr float kGameManualAcceleration = 165.0f;
 constexpr float kGameManualBrake = 245.0f;
+constexpr float kGameManualReverseAcceleration = 135.0f;
 constexpr float kGameMaxTurnRateDegPerSecond = 135.0f;
 constexpr float kGameCoinPickupRadius = 58.0f;
 constexpr float kGameDegToRad = 0.017453292519943295769f;
@@ -253,17 +255,27 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
   } else {
     if (buttons.accelerate) {
       game->carSpeed += kGameManualAcceleration * dt;
-    } else {
-      game->carSpeed -= kGameManualCoastDrag * dt;
     }
 
     if (buttons.brake) {
-      game->carSpeed -= kGameManualBrake * dt;
+      if (game->carSpeed > 0.0f) {
+        game->carSpeed -= kGameManualBrake * dt;
+      } else {
+        game->carSpeed -= kGameManualReverseAcceleration * dt;
+      }
     }
-    game->carSpeed = std::clamp(game->carSpeed, 0.0f, kGameMaxSpeed);
+
+    if (!buttons.accelerate && !buttons.brake) {
+      if (game->carSpeed > 0.0f) {
+        game->carSpeed = std::max(0.0f, game->carSpeed - kGameManualCoastDrag * dt);
+      } else if (game->carSpeed < 0.0f) {
+        game->carSpeed = std::min(0.0f, game->carSpeed + kGameManualCoastDrag * dt);
+      }
+    }
+    game->carSpeed = std::clamp(game->carSpeed, -kGameMaxReverseSpeed, kGameMaxSpeed);
   }
 
-  const float speedFactor = std::clamp(game->carSpeed / kGameAutoSpeed, 0.25f, 1.8f);
+  const float speedFactor = std::clamp(std::fabs(game->carSpeed) / kGameAutoSpeed, 0.25f, 1.8f);
   game->carHeadingDeg += clampedSteering * kGameMaxTurnRateDegPerSecond * speedFactor * dt;
 
   const float headingRad = game->carHeadingDeg * kGameDegToRad;

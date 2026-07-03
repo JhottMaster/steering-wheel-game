@@ -24,12 +24,13 @@ constexpr int kServerDiscoveryPort = 4211;
 constexpr float kServerBeaconIntervalSeconds = 3.0f;
 constexpr float kServerBeaconStartDelaySeconds = 5.0f;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
-constexpr float kGameSteeringRangeDeg = 65.0f;
+constexpr float kGameSteeringFullLockDeg = 270.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
 constexpr float kPacketTimeoutSeconds = 2.0f;
 constexpr float kDisplaySteeringDirection = -1.0f;
 constexpr float kGameSteeringDirection = -1.0f;
-constexpr float kRecenterChordHoldSeconds = 5.0f;
+constexpr float kRecenterGestureWindowSeconds = 1.5f;
+constexpr int kRecenterRedPressesRequired = 3;
 constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
 
 enum class AppMode {
@@ -46,6 +47,12 @@ std::string JoinLocalIps(const std::vector<std::string>& addresses) {
     joined << addresses[i];
   }
   return joined.str();
+}
+
+float GetWrappedGameWheelAngleDeg(const SensorFrame& frame, const SensorFrame& centerFrame,
+                                  bool hasCenterFrame) {
+  return hasCenterFrame ? GetCenteredAxisDegrees(DisplayAxis::kPitch, frame, centerFrame)
+                        : GetAxisDegrees(DisplayAxis::kPitch, frame);
 }
 }  // namespace
 
@@ -77,9 +84,13 @@ int main() {
   auto lastBeaconTime = std::chrono::steady_clock::time_point{};
   bool hasEverReceivedPacket = false;
   bool wasBroadcastingForLoss = false;
-  bool simultaneousButtonsWereDown = false;
-  auto simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
-  bool recenterChordTriggered = false;
+  bool greenButtonGestureActive = false;
+  auto greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
+  bool redButtonWasDown = false;
+  int redButtonPressCount = 0;
+  float gameAccumulatedAngleDeg = 0.0f;
+  float lastWrappedGameAngleDeg = 0.0f;
+  bool hasLastWrappedGameAngle = false;
 
   while (!WindowShouldClose()) {
     if (platform::ShouldToggleFullscreen()) {
@@ -111,6 +122,16 @@ int main() {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
       }
+
+      const float wrappedGameAngleDeg =
+          GetWrappedGameWheelAngleDeg(lastGoodFrame, centerFrame, hasCenterFrame);
+      if (!hasLastWrappedGameAngle) {
+        gameAccumulatedAngleDeg = wrappedGameAngleDeg;
+        hasLastWrappedGameAngle = true;
+      } else {
+        gameAccumulatedAngleDeg += WrapDegrees(wrappedGameAngleDeg - lastWrappedGameAngleDeg);
+      }
+      lastWrappedGameAngleDeg = wrappedGameAngleDeg;
     }
 
     const float dt = GetFrameTime();
@@ -150,49 +171,72 @@ int main() {
       lastBeaconTime = now;
     }
 
-    const bool simultaneousButtonsDown =
-        hasFreshPackets && lastGoodFrame.button1Pressed && lastGoodFrame.button2Pressed;
-    if (simultaneousButtonsDown && !simultaneousButtonsWereDown) {
-      simultaneousButtonsDownSince = now;
-      recenterChordTriggered = false;
-      std::printf("Recenter chord started. Hold both buttons for %.1f seconds.\n",
-                  kRecenterChordHoldSeconds);
+    const bool greenButtonDown = hasFreshPackets && lastGoodFrame.button1Pressed;
+    const bool redButtonDown = hasFreshPackets && lastGoodFrame.button2Pressed;
+
+    if (greenButtonDown && !greenButtonGestureActive) {
+      greenButtonGestureActive = true;
+      greenButtonGestureStartTime = now;
+      redButtonPressCount = 0;
+      redButtonWasDown = redButtonDown;
+      std::printf("Recenter gesture started. Hold green and press red %d times within %.1f seconds.\n",
+                  kRecenterRedPressesRequired, kRecenterGestureWindowSeconds);
     }
-    if (simultaneousButtonsDown && !recenterChordTriggered &&
-        simultaneousButtonsDownSince != std::chrono::steady_clock::time_point{} &&
-        std::chrono::duration<float>(now - simultaneousButtonsDownSince).count() >=
-            kRecenterChordHoldSeconds) {
-      if (hasAnyPacket) {
-        centerFrame = lastGoodFrame;
-        hasCenterFrame = true;
-        std::printf("Controller center reset after %.1f second simultaneous button hold.\n",
-                    kRecenterChordHoldSeconds);
+
+    if (greenButtonGestureActive) {
+      const float gestureElapsedSeconds =
+          std::chrono::duration<float>(now - greenButtonGestureStartTime).count();
+
+      if (redButtonDown && !redButtonWasDown) {
+        ++redButtonPressCount;
+        std::printf("Recenter gesture red press %d/%d.\n", redButtonPressCount,
+                    kRecenterRedPressesRequired);
       }
-      recenterChordTriggered = true;
-    }
-    if (!simultaneousButtonsDown && simultaneousButtonsWereDown) {
-      const float heldSeconds =
-          simultaneousButtonsDownSince == std::chrono::steady_clock::time_point{}
-              ? 0.0f
-              : std::chrono::duration<float>(now - simultaneousButtonsDownSince).count();
-      if (!recenterChordTriggered) {
-        std::printf("Recenter chord released after %.2f seconds.\n", heldSeconds);
+      redButtonWasDown = redButtonDown;
+
+      if (!greenButtonDown) {
+        std::printf("Recenter gesture cancelled: green released.\n");
+        greenButtonGestureActive = false;
+        greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
+        redButtonPressCount = 0;
+        redButtonWasDown = false;
+      } else if (gestureElapsedSeconds > kRecenterGestureWindowSeconds) {
+        if (redButtonPressCount >= kRecenterRedPressesRequired) {
+          centerFrame = lastGoodFrame;
+          hasCenterFrame = true;
+          gameAccumulatedAngleDeg = 0.0f;
+          lastWrappedGameAngleDeg = 0.0f;
+          hasLastWrappedGameAngle = false;
+          std::printf("Controller center reset from green hold + red triple press gesture.\n");
+        } else {
+          std::printf("Recenter gesture timed out at %.2f seconds with %d/%d red presses.\n",
+                      gestureElapsedSeconds, redButtonPressCount, kRecenterRedPressesRequired);
+        }
+        greenButtonGestureActive = false;
+        greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
+        redButtonPressCount = 0;
+        redButtonWasDown = false;
       }
-      simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
-      recenterChordTriggered = false;
     }
-    simultaneousButtonsWereDown = simultaneousButtonsDown;
 
     if (IsKeyPressed(KEY_SPACE)) {
       if (hasAnyPacket) {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
+        gameAccumulatedAngleDeg = 0.0f;
+        lastWrappedGameAngleDeg = 0.0f;
+        hasLastWrappedGameAngle = false;
       } else {
         manualAngleDeg = 0.0f;
         hasCenterFrame = false;
+        gameAccumulatedAngleDeg = 0.0f;
+        lastWrappedGameAngleDeg = 0.0f;
+        hasLastWrappedGameAngle = false;
       }
-      simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
-      recenterChordTriggered = false;
+      greenButtonGestureActive = false;
+      greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
+      redButtonPressCount = 0;
+      redButtonWasDown = false;
     }
 
     const float sourceAngleDeg =
@@ -204,12 +248,9 @@ int main() {
     const float steeringAngleDeg = centeredAngleDeg * kDisplaySteeringDirection;
     const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
-    const float gameSourceAngleDeg =
-        hasAnyPacket && hasCenterFrame
-            ? GetCenteredAxisDegrees(DisplayAxis::kPitch, lastGoodFrame, centerFrame)
-            : (hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame) : manualAngleDeg);
+    const float gameSourceAngleDeg = hasAnyPacket ? gameAccumulatedAngleDeg : manualAngleDeg;
     const float gameSteeringInput =
-        ClampUnit((gameSourceAngleDeg * kGameSteeringDirection) / kGameSteeringRangeDeg);
+        ClampUnit((gameSourceAngleDeg * kGameSteeringDirection) / kGameSteeringFullLockDeg);
     const GameButtons gameButtons = {
         (hasFreshPackets && lastGoodFrame.button1Pressed) ||
             (!hasFreshPackets && (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))),
