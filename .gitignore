@@ -3,4 +3,5 @@
 .local-cache/
 .local-config/
 firmware/xiao_bno055_udp_sender/wifi_secrets.h
-controller_poc/build/bin/game_logic_tests.exe
+controller_game/build/
+controller_game/raspberry_pi_config.bat

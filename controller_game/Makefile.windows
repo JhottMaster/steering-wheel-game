@@ -1,0 +1,53 @@
+CXX ?= g++
+CXXFLAGS ?= -std=c++17 -O2
+CPPFLAGS ?=
+SHELL := cmd
+.SHELLFLAGS := /C
+
+SRC = src/main.cpp
+TEST_SRC = src/game_logic_tests.cpp
+BUILD_DIR = build
+BIN_DIR = $(BUILD_DIR)/bin
+OUTPUT = $(BIN_DIR)/steering_wheel_game.exe
+TEST_OUTPUT = $(BIN_DIR)/game_logic_tests.exe
+RAYLIB_DIR ?= ..\raylib
+RAYLIB_LIB = $(RAYLIB_DIR)\src\libraylib.a
+MSYS2_MINGW_PREFIX ?= C:/msys64/mingw64
+MSYS2_RAYLIB_LIB = $(MSYS2_MINGW_PREFIX)/lib/libraylib.a
+ifneq ("$(wildcard $(RAYLIB_LIB))","")
+RAYLIB_CFLAGS = -I"$(RAYLIB_DIR)\src"
+RAYLIB_LIBS = "$(RAYLIB_LIB)"
+else ifneq ("$(wildcard $(MSYS2_RAYLIB_LIB))","")
+RAYLIB_CFLAGS = -I"$(MSYS2_MINGW_PREFIX)/include"
+RAYLIB_LIBS = "$(MSYS2_RAYLIB_LIB)"
+else
+RAYLIB_CFLAGS =
+RAYLIB_LIBS = -lraylib
+endif
+INCLUDES = $(RAYLIB_CFLAGS)
+LIBS = $(RAYLIB_LIBS) -lopengl32 -lgdi32 -lwinmm -lws2_32 -static-libgcc -static-libstdc++
+
+.PHONY: all buildonly run test clean rebuild
+
+all: $(OUTPUT)
+
+buildonly: all
+
+run: $(OUTPUT)
+	@if exist "$(subst /,\,$(OUTPUT))" "$(subst /,\,$(OUTPUT))"
+
+test: $(TEST_OUTPUT)
+	"$(TEST_OUTPUT)"
+
+$(OUTPUT): $(SRC) src/game_logic.h src/platform_windows.h
+	@if not exist "$(subst /,\,$(BIN_DIR))" mkdir "$(subst /,\,$(BIN_DIR))"
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
+
+$(TEST_OUTPUT): $(TEST_SRC) src/game_logic.h
+	@if not exist "$(subst /,\,$(BIN_DIR))" mkdir "$(subst /,\,$(BIN_DIR))"
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
+
+clean:
+	@if exist "$(subst /,\,$(BUILD_DIR))" rmdir /s /q "$(subst /,\,$(BUILD_DIR))"
+
+rebuild: clean all

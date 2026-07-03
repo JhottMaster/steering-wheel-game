@@ -21,14 +21,19 @@ if not exist "%MINGW_BIN%\mingw32-make.exe" (
 
 set "PATH=%MINGW_BIN%;%USR_BIN%;%PATH%"
 
-echo Running controller POC logic tests...
-"%MINGW_BIN%\mingw32-make.exe" test
+echo Building steering wheel controller game...
+"%MINGW_BIN%\mingw32-make.exe" -f Makefile.windows buildonly
 
 if errorlevel 1 (
     echo.
-    echo Tests failed.
+    echo Build failed.
+    echo Makefile.windows first checks for a local raylib checkout at:
+    echo   ..\raylib
+    echo If that is missing, it falls back to the MSYS2 MINGW64 raylib package.
+    echo You can also set RAYLIB_DIR before running this script.
     exit /b 1
 )
 
 echo.
-echo Tests completed successfully.
+echo Build completed successfully.
+echo Built executable: "%CD%\build\bin\steering_wheel_game.exe"

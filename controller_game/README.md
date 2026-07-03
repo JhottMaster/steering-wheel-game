@@ -1,10 +1,9 @@
-# Steering Wheel Controller POC
+# Steering Wheel Controller Game
 
-Minimal `raylib` app that listens for steering sensor data over `UDP` and runs a simple top-down Road Carpet Drive game.
+Shared `raylib` game code for both the Windows desktop dev loop and the Raspberry Pi console build.
 
 ## What It Does
 
-- opens a simple 2D window
 - listens on `UDP` port `4210`
 - expects packets like:
 
@@ -25,7 +24,6 @@ roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 ## Controls
 
 - `T`: toggle Road Carpet Drive / hardware test dashboard
-- `F11`: toggle fullscreen
 - `A`: toggle auto-drive / button-throttle mode in the game
 - `P`: use `pitch` for steering
 - `R`: use `roll` for debug comparison
@@ -34,6 +32,8 @@ roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 - `A` / `D` or left / right arrows: keyboard steering fallback input
 - `W` / up arrow: keyboard acceleration fallback in button-throttle mode
 - `S` / down arrow: keyboard brake fallback in button-throttle mode
+- `F11`: toggle fullscreen on desktop builds
+- `ESC`: quit
 
 ## Assets
 
@@ -65,43 +65,52 @@ python tools/generate_assets.py
 python tools/generate_sounds.py
 ```
 
-## Building
+## Build And Run
 
-### Linux
+### Windows Desktop Loop
 
-Install `raylib` development files so `pkg-config` can find them, then run:
-
-```bash
-make buildonly
-./build/bin/steering_wheel_poc
-```
-
-### Windows
-
-This project follows the same rough pattern as your existing Raylib setup:
-
-- install `MSYS2` with the `mingw64` toolchain
-- provide a `raylib` checkout at `../raylib`, or set `RAYLIB_DIR`
-
-Then run:
+This keeps the same fast local workflow:
 
 ```text
 windows_build.bat
-```
-
-Run logic tests on Windows with:
-
-```text
 windows_test.bat
 ```
 
-On Linux, run:
+The Windows build first checks for a `raylib` checkout at `..\raylib`. If that is missing, it falls back to the MSYS2 MINGW64 raylib package, or you can set `RAYLIB_DIR`.
+
+### Raspberry Pi Console Build
+
+Build `raylib` for `PLATFORM_DRM`, then from this folder run:
 
 ```bash
-make test
+make -f Makefile.raspberry_pi
+./build/bin/steering_wheel_console
 ```
 
-## Notes
+By default the Pi build expects `raylib` at `~/raylib`. Override that with:
 
-- This is intentionally a proof of concept, not a finished game architecture.
-- The goal is to prove that sensor orientation can drive a cross-platform `raylib` executable cleanly.
+```bash
+make -f Makefile.raspberry_pi RAYLIB_DIR=/path/to/raylib
+```
+
+This Pi build uses the same gameplay code, but switches to a fixed `1920x1080` console-style setup.
+
+## Remote Pi Deploy Loop
+
+For Windows-to-Pi development there is also:
+
+```text
+deploy_to_raspberry_pi.bat
+stop_raspberry_pi_game.bat
+```
+
+The deploy script:
+
+- syncs the shared game files to the Pi over `ssh` / `scp`
+- runs `Makefile.raspberry_pi` remotely and streams build errors back to your terminal
+- stops the previous game process if one is running
+- launches the new Pi build in the background if the build succeeds
+
+The stop script only runs the remote process stop step, which is useful when the Pi game is already running and you want the display back.
+
+Create a local `raspberry_pi_config.bat` from `raspberry_pi_config.example.bat` and fill in your Pi host, username, and remote path first. Absolute Linux paths are the safest choice for `PI_REMOTE_DIR` and `PI_RAYLIB_DIR`.

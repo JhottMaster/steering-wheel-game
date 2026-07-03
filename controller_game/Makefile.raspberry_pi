@@ -1,0 +1,38 @@
+CXX ?= g++
+CXXFLAGS ?= -std=c++17 -O2
+CPPFLAGS ?= -DSTEERING_WHEEL_RASPBERRY_PI
+
+SRC = src/main.cpp
+TEST_SRC = src/game_logic_tests.cpp
+BUILD_DIR = build
+BIN_DIR = $(BUILD_DIR)/bin
+OUTPUT = $(BIN_DIR)/steering_wheel_console
+TEST_OUTPUT = $(BIN_DIR)/game_logic_tests
+RAYLIB_DIR ?= $(HOME)/raylib
+INCLUDES = -I$(RAYLIB_DIR)/src
+LIBS = $(RAYLIB_DIR)/src/libraylib.a -lm -ldl -lpthread -lrt -lGLESv2 -lEGL -ldrm -lgbm -lasound -latomic
+
+.PHONY: all buildonly run test clean rebuild
+
+all: $(OUTPUT)
+
+buildonly: all
+
+run: $(OUTPUT)
+	./$(OUTPUT)
+
+test: $(TEST_OUTPUT)
+	./$(TEST_OUTPUT)
+
+$(OUTPUT): $(SRC) src/game_logic.h src/platform_linux.h
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
+
+$(TEST_OUTPUT): $(TEST_SRC) src/game_logic.h
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
+
+clean:
+	@rm -rf $(BUILD_DIR)
+
+rebuild: clean all

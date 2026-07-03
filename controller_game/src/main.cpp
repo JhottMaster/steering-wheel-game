@@ -1,50 +1,20 @@
 #include <algorithm>
-#include <array>
-#include <cerrno>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
-#include <cstring>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef NOGDI
-#define NOGDI
-#endif
-#ifndef NOUSER
-#define NOUSER
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-using SocketHandle = SOCKET;
-constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+#include "platform_windows.h"
 #else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <ifaddrs.h>
-#include <net/if.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-using SocketHandle = int;
-constexpr SocketHandle kInvalidSocket = -1;
+#include "platform_linux.h"
 #endif
 
-#include "raylib.h"
 #include "game_logic.h"
+#include "raylib.h"
 
 namespace {
-constexpr int kWindowWidth = 1600;
-constexpr int kWindowHeight = 900;
 constexpr int kUdpPort = 4210;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
@@ -62,115 +32,6 @@ enum class AppMode {
   kGame,
   kHardwareTest,
 };
-
-struct UdpReceiver {
-  SocketHandle socket = kInvalidSocket;
-  bool winsockStarted = false;
-
-  bool Open(int port) {
-#if defined(_WIN32)
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-      return false;
-    }
-    winsockStarted = true;
-#endif
-
-    socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket == kInvalidSocket) {
-      Close();
-      return false;
-    }
-
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
-    address.sin_port = htons(static_cast<uint16_t>(port));
-
-    if (bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-      Close();
-      return false;
-    }
-
-#if defined(_WIN32)
-    u_long nonBlocking = 1;
-    if (ioctlsocket(socket, FIONBIO, &nonBlocking) != 0) {
-      Close();
-      return false;
-    }
-#else
-    const int flags = fcntl(socket, F_GETFL, 0);
-    if (flags < 0 || fcntl(socket, F_SETFL, flags | O_NONBLOCK) < 0) {
-      Close();
-      return false;
-    }
-#endif
-
-    return true;
-  }
-
-  void Close() {
-    if (socket != kInvalidSocket) {
-#if defined(_WIN32)
-      closesocket(socket);
-#else
-      close(socket);
-#endif
-      socket = kInvalidSocket;
-    }
-
-#if defined(_WIN32)
-    if (winsockStarted) {
-      WSACleanup();
-      winsockStarted = false;
-    }
-#endif
-  }
-
-  ~UdpReceiver() { Close(); }
-};
-
-bool PollLatestSensorFrame(UdpReceiver* receiver, SensorFrame* frame) {
-  bool receivedFrame = false;
-  std::array<char, 256> buffer{};
-
-  while (true) {
-    sockaddr_in sender{};
-#if defined(_WIN32)
-    int senderLength = sizeof(sender);
-    const int receivedBytes =
-        recvfrom(receiver->socket, buffer.data(), static_cast<int>(buffer.size()) - 1, 0,
-                 reinterpret_cast<sockaddr*>(&sender), &senderLength);
-    if (receivedBytes == SOCKET_ERROR) {
-      const int error = WSAGetLastError();
-      if (error == WSAEWOULDBLOCK) {
-        break;
-      }
-      return receivedFrame;
-    }
-#else
-    socklen_t senderLength = sizeof(sender);
-    const int receivedBytes =
-        recvfrom(receiver->socket, buffer.data(), buffer.size() - 1, 0,
-                 reinterpret_cast<sockaddr*>(&sender), &senderLength);
-    if (receivedBytes < 0) {
-      if (errno == EWOULDBLOCK || errno == EAGAIN) {
-        break;
-      }
-      return receivedFrame;
-    }
-#endif
-
-    buffer[receivedBytes] = '\0';
-    SensorFrame parsedFrame;
-    if (ParsePacket(buffer.data(), &parsedFrame)) {
-      *frame = parsedFrame;
-      receivedFrame = true;
-    }
-  }
-
-  return receivedFrame;
-}
 
 float GetAxisDegrees(DisplayAxis axis, const SensorFrame& frame) {
   switch (axis) {
@@ -242,13 +103,13 @@ void DrawButtonLamp(Vector2 center, float radius, bool pressed, Color dimColor, 
   }
 
   const int labelWidth = MeasureText(label, 20);
-  DrawText(label, static_cast<int>(center.x - labelWidth / 2), static_cast<int>(center.y + radius + 12.0f),
-           20, Color{46, 72, 88, 255});
+  DrawText(label, static_cast<int>(center.x - labelWidth / 2),
+           static_cast<int>(center.y + radius + 12.0f), 20, Color{46, 72, 88, 255});
 }
 
 void DrawPanel(Rectangle bounds, Color fillColor) {
   DrawRectangleRounded(bounds, 0.10f, 10, fillColor);
-  DrawRectangleRoundedLines(bounds, 0.10f, 10, Color{206, 198, 179, 255});
+  platform::DrawRoundedRectangleLines(bounds, 0.10f, 10, 2.0f, Color{206, 198, 179, 255});
 }
 
 void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
@@ -264,7 +125,8 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
   const float top = 26.0f;
   const float panelTop = 112.0f;
   const float bottomMargin = 32.0f;
-  const float panelHeight = std::max(420.0f, static_cast<float>(screenHeight) - panelTop - bottomMargin);
+  const float panelHeight =
+      std::max(420.0f, static_cast<float>(screenHeight) - panelTop - bottomMargin);
   const float sidePanelWidth = std::clamp(contentWidth * 0.26f, 320.0f, 430.0f);
   const float gap = 24.0f;
   const Rectangle leftPanel = {contentLeft, panelTop, sidePanelWidth, panelHeight};
@@ -273,9 +135,9 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
                                 contentWidth - sidePanelWidth * 2.0f - gap * 2.0f,
                                 panelHeight};
 
-  DrawText("Toddler Steering Wheel POC", static_cast<int>(contentLeft), static_cast<int>(top), 34,
+  DrawText(platform::kHeaderTitle, static_cast<int>(contentLeft), static_cast<int>(top), 34,
            Color{46, 72, 88, 255});
-  DrawText("T: game/test   F11: fullscreen   P/R/Y: axis   SPACE: center   A/D or arrows: fallback input",
+  DrawText(platform::kHeaderHelp,
            static_cast<int>(contentLeft), static_cast<int>(top + 42.0f), 21,
            Color{77, 92, 103, 255});
 
@@ -302,8 +164,7 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
   DrawText(TextFormat("axis: %s", GetAxisLabel(displayAxis)), leftX, y, 23,
            Color{46, 72, 88, 255});
   y += 38;
-  DrawText(TextFormat("raw: %.1f deg", sourceAngleDeg), leftX, y, 23,
-           Color{46, 72, 88, 255});
+  DrawText(TextFormat("raw: %.1f deg", sourceAngleDeg), leftX, y, 23, Color{46, 72, 88, 255});
   y += 38;
   DrawText(TextFormat("centered: %.1f deg", centeredAngleDeg), leftX, y, 23,
            Color{46, 72, 88, 255});
@@ -316,11 +177,11 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
   y += 56;
   DrawText("Buttons", leftX, y, 26, Color{46, 72, 88, 255});
   y += 44;
-  DrawText(TextFormat("green/right: %s", lastGoodFrame.button1Pressed ? "pressed" : "up"),
-           leftX, y, 22, Color{46, 72, 88, 255});
+  DrawText(TextFormat("green/right: %s", lastGoodFrame.button1Pressed ? "pressed" : "up"), leftX,
+           y, 22, Color{46, 72, 88, 255});
   y += 34;
-  DrawText(TextFormat("red/left: %s", lastGoodFrame.button2Pressed ? "pressed" : "up"),
-           leftX, y, 22, Color{46, 72, 88, 255});
+  DrawText(TextFormat("red/left: %s", lastGoodFrame.button2Pressed ? "pressed" : "up"), leftX, y,
+           22, Color{46, 72, 88, 255});
 
   const int rightX = static_cast<int>(rightPanel.x + 24.0f);
   y = static_cast<int>(rightPanel.y + 24.0f);
@@ -336,8 +197,7 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
   y += 38;
   DrawText(TextFormat("UDP port: %d", kUdpPort), rightX, y, 21, Color{77, 92, 103, 255});
   y += 34;
-  DrawText(udpReady ? "Listener: ready" : "Listener: failed",
-           rightX, y, 21,
+  DrawText(udpReady ? "Listener: ready" : "Listener: failed", rightX, y, 21,
            udpReady ? Color{59, 120, 87, 255} : Color{184, 72, 49, 255});
   y += 46;
   DrawText("Host IPv4", rightX, y, 22, Color{77, 92, 103, 255});
@@ -346,20 +206,18 @@ void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
   y += 56;
   DrawText("Latest packet", rightX, y, 22, Color{77, 92, 103, 255});
   y += 32;
-  DrawText(TextFormat("roll %.1f", lastGoodFrame.roll), rightX, y, 20,
-           Color{46, 72, 88, 255});
+  DrawText(TextFormat("roll %.1f", lastGoodFrame.roll), rightX, y, 20, Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("pitch %.1f", lastGoodFrame.pitch), rightX, y, 20,
-           Color{46, 72, 88, 255});
+  DrawText(TextFormat("pitch %.1f", lastGoodFrame.pitch), rightX, y, 20, Color{46, 72, 88, 255});
   y += 28;
   DrawText(TextFormat("heading %.1f", lastGoodFrame.heading), rightX, y, 20,
            Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("button1 %s", lastGoodFrame.button1Pressed ? "pressed" : "up"),
-           rightX, y, 20, Color{46, 72, 88, 255});
+  DrawText(TextFormat("button1 %s", lastGoodFrame.button1Pressed ? "pressed" : "up"), rightX, y,
+           20, Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("button2 %s", lastGoodFrame.button2Pressed ? "pressed" : "up"),
-           rightX, y, 20, Color{46, 72, 88, 255});
+  DrawText(TextFormat("button2 %s", lastGoodFrame.button2Pressed ? "pressed" : "up"), rightX, y,
+           20, Color{46, 72, 88, 255});
 }
 
 struct GameAssets {
@@ -386,7 +244,7 @@ bool TextureLoaded(Texture2D texture) {
 std::string FindAssetPath(const char* folder, const char* filename) {
   const std::vector<std::string> candidates = {
       std::string(folder) + "/" + filename,
-      std::string("controller_poc/") + folder + "/" + filename,
+      std::string("controller_game/") + folder + "/" + filename,
       std::string("../") + folder + "/" + filename,
       std::string("../../") + folder + "/" + filename,
   };
@@ -507,7 +365,8 @@ Camera2D BuildGameCamera(const GameState& game, int screenWidth, int screenHeigh
   const float halfViewWidth = static_cast<float>(screenWidth) * 0.5f / zoom;
   const float halfViewHeight = static_cast<float>(screenHeight) * 0.5f / zoom;
   Camera2D camera = {};
-  camera.offset = Vector2{static_cast<float>(screenWidth) * 0.5f, static_cast<float>(screenHeight) * 0.5f};
+  camera.offset =
+      Vector2{static_cast<float>(screenWidth) * 0.5f, static_cast<float>(screenHeight) * 0.5f};
   if (halfViewWidth * 2.0f >= kGameMapSize) {
     camera.target.x = kGameMapSize * 0.5f;
   } else {
@@ -554,88 +413,39 @@ void DrawGame(const GameState& game, const GameAssets& assets, bool hasFreshPack
     const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.car.width),
                               static_cast<float>(assets.car.height)};
     const float carDrawWidth = 58.0f;
-    const float carDrawHeight = carDrawWidth * static_cast<float>(assets.car.height) /
-                                static_cast<float>(assets.car.width);
+    const float carDrawHeight =
+        carDrawWidth * static_cast<float>(assets.car.height) / static_cast<float>(assets.car.width);
     const Rectangle destination = {game.carPosition.x, game.carPosition.y, carDrawWidth, carDrawHeight};
     DrawTexturePro(assets.car, source, destination,
                    Vector2{carDrawWidth * 0.5f, carDrawHeight * 0.5f}, game.carHeadingDeg, WHITE);
   } else {
-    const Vector2 nose = PointOnCircle(ToVector2(game.carPosition), 34.0f, game.carHeadingDeg - 90.0f);
+    const Vector2 nose =
+        PointOnCircle(ToVector2(game.carPosition), 34.0f, game.carHeadingDeg - 90.0f);
     DrawCircleV(ToVector2(game.carPosition), 28.0f, RED);
     DrawCircleV(nose, 8.0f, YELLOW);
   }
   EndMode2D();
 
-  DrawRectangle(20, 20, 420, 122, Color{18, 28, 32, 185});
+  const int leftPanelWidth = platform::kConsoleBuild ? 480 : 420;
+  const int rightPanelX = screenWidth - (platform::kConsoleBuild ? 500 : 430);
+  const int rightPanelWidth = platform::kConsoleBuild ? 476 : 410;
+  const int rightTextX = screenWidth - (platform::kConsoleBuild ? 476 : 408);
+
+  DrawRectangle(20, 20, leftPanelWidth, 122, Color{18, 28, 32, 185});
   DrawText("Road Carpet Drive", 38, 36, 30, Color{255, 244, 205, 255});
-  DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())),
-           40, 74, 22, Color{232, 236, 224, 255});
+  DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 40, 74,
+           22, Color{232, 236, 224, 255});
   DrawText(TextFormat("drive: %s   speed: %.0f",
-                      game.driveMode == DriveMode::kAuto ? "auto" : "button",
-                      game.carSpeed),
+                      game.driveMode == DriveMode::kAuto ? "auto" : "button", game.carSpeed),
            40, 104, 20, Color{232, 236, 224, 255});
 
-  DrawRectangle(screenWidth - 430, 20, 410, 118, Color{18, 28, 32, 185});
-  DrawText("T: hardware test   F11: fullscreen", screenWidth - 408, 36, 22, Color{232, 236, 224, 255});
-  DrawText("A: auto/button drive   SPACE: center", screenWidth - 408, 66, 19,
+  DrawRectangle(rightPanelX, 20, rightPanelWidth, 118, Color{18, 28, 32, 185});
+  DrawText(platform::kGameHelp, rightTextX, 36, 22, Color{232, 236, 224, 255});
+  DrawText("A: auto/button drive   SPACE: center", rightTextX, 66, 19,
            Color{195, 214, 204, 255});
-  DrawText(hasFreshPackets ? "UDP controller active" : "keyboard fallback",
-           screenWidth - 408, 94, 19,
+  DrawText(hasFreshPackets ? "UDP controller active" : "keyboard fallback", rightTextX, 94, 19,
            hasFreshPackets ? Color{104, 230, 141, 255} : Color{246, 187, 87, 255});
-  DrawText(localIpText.c_str(), screenWidth - 408, 116, 16, Color{176, 196, 186, 255});
-}
-
-std::vector<std::string> GetLocalIpv4Addresses() {
-  std::vector<std::string> addresses;
-
-#if defined(_WIN32)
-  char hostName[256] = {};
-  if (gethostname(hostName, sizeof(hostName)) == 0) {
-    addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    addrinfo* info = nullptr;
-    if (getaddrinfo(hostName, nullptr, &hints, &info) == 0) {
-      for (addrinfo* current = info; current != nullptr; current = current->ai_next) {
-        const sockaddr_in* ipv4 = reinterpret_cast<const sockaddr_in*>(current->ai_addr);
-        char ipBuffer[INET_ADDRSTRLEN] = {};
-        if (inet_ntop(AF_INET, &(ipv4->sin_addr), ipBuffer, sizeof(ipBuffer)) != nullptr) {
-          std::string address(ipBuffer);
-          if (address != "127.0.0.1" &&
-              std::find(addresses.begin(), addresses.end(), address) == addresses.end()) {
-            addresses.push_back(address);
-          }
-        }
-      }
-      freeaddrinfo(info);
-    }
-  }
-#else
-  ifaddrs* interfaces = nullptr;
-  if (getifaddrs(&interfaces) == 0) {
-    for (ifaddrs* iface = interfaces; iface != nullptr; iface = iface->ifa_next) {
-      if (iface->ifa_addr == nullptr || iface->ifa_addr->sa_family != AF_INET) {
-        continue;
-      }
-      if ((iface->ifa_flags & IFF_UP) == 0 || (iface->ifa_flags & IFF_LOOPBACK) != 0) {
-        continue;
-      }
-
-      char ipBuffer[INET_ADDRSTRLEN] = {};
-      const sockaddr_in* ipv4 = reinterpret_cast<const sockaddr_in*>(iface->ifa_addr);
-      if (inet_ntop(AF_INET, &(ipv4->sin_addr), ipBuffer, sizeof(ipBuffer)) != nullptr) {
-        addresses.emplace_back(ipBuffer);
-      }
-    }
-    freeifaddrs(interfaces);
-  }
-#endif
-
-  if (addresses.empty()) {
-    addresses.emplace_back("No active IPv4 address found");
-  }
-
-  return addresses;
+  DrawText(localIpText.c_str(), rightTextX, 116, 16, Color{176, 196, 186, 255});
 }
 
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
@@ -651,14 +461,13 @@ std::string JoinLocalIps(const std::vector<std::string>& addresses) {
 }  // namespace
 
 int main() {
-  UdpReceiver receiver;
+  platform::UdpReceiver receiver;
   const bool udpReady = receiver.Open(kUdpPort);
-  const std::string localIpText = JoinLocalIps(GetLocalIpv4Addresses());
+  const std::string localIpText = JoinLocalIps(platform::GetLocalIpv4Addresses());
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
-  InitWindow(kWindowWidth, kWindowHeight, "Steering Wheel Controller POC");
-  SetWindowMinSize(960, 540);
-  MaximizeWindow();
+  SetConfigFlags(platform::GetWindowConfigFlags());
+  InitWindow(platform::kWindowWidth, platform::kWindowHeight, platform::kWindowTitle);
+  platform::ApplyPostWindowInit();
   SetTargetFPS(60);
   InitAudioDevice();
 
@@ -675,7 +484,7 @@ int main() {
   float manualAngleDeg = 0.0f;
 
   while (!WindowShouldClose()) {
-    if (IsKeyPressed(KEY_F11)) {
+    if (platform::ShouldToggleFullscreen()) {
       ToggleFullscreen();
     }
     if (IsKeyPressed(KEY_T)) {
@@ -695,7 +504,7 @@ int main() {
       displayAxis = DisplayAxis::kYaw;
     }
 
-    if (PollLatestSensorFrame(&receiver, &latestFrame)) {
+    if (platform::PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
       lastPacketTime = std::chrono::steady_clock::now();
       if (!hasCenterFrame) {
@@ -713,8 +522,7 @@ int main() {
     manualAngleDeg = std::clamp(manualAngleDeg, -kVisibleAngleRangeDeg, kVisibleAngleRangeDeg);
 
     const auto now = std::chrono::steady_clock::now();
-    const float secondsSincePacket =
-        std::chrono::duration<float>(now - lastPacketTime).count();
+    const float secondsSincePacket = std::chrono::duration<float>(now - lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
     const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
 
@@ -739,8 +547,8 @@ int main() {
     const float steeringAngleDeg = centeredAngleDeg * kSteeringDirection;
     const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
-    const float gameSourceAngleDeg = hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame)
-                                                  : manualAngleDeg;
+    const float gameSourceAngleDeg =
+        hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame) : manualAngleDeg;
     const float gameCalibrationOffsetDeg =
         hasCenterFrame ? GetAxisDegrees(DisplayAxis::kPitch, centerFrame) : 0.0f;
     const float gameSteeringInput =
@@ -768,8 +576,8 @@ int main() {
     }
 
     DrawHardwareTest(lastGoodFrame, displayAxis, sourceAngleDeg, centeredAngleDeg,
-                     steeringAngleDeg, normalizedValue, hasFreshPackets, hasAnyPacket,
-                     udpReady, localIpText, screenWidth, screenHeight);
+                     steeringAngleDeg, normalizedValue, hasFreshPackets, hasAnyPacket, udpReady,
+                     localIpText, screenWidth, screenHeight);
 
     EndDrawing();
   }
