@@ -97,19 +97,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Stopping previous Pi game process if needed...
-ssh "%REMOTE%" "pkill -f build/bin/steering_wheel_console || true"
-
-echo Launching new Pi build...
-ssh -n "%REMOTE%" "cd '%PI_REMOTE_DIR%' && (nohup setsid ./build/bin/steering_wheel_console >/tmp/steering_wheel_console.log 2>&1 </dev/null &)"
-if errorlevel 1 (
-    echo Build succeeded, but launching the game failed.
-    del /f /q "%ARCHIVE%" >nul 2>nul
-    exit /b 1
-)
-
 del /f /q "%ARCHIVE%" >nul 2>nul
 
 echo.
-echo Raspberry Pi deploy completed successfully.
-echo Remote log: /tmp/steering_wheel_console.log
+echo Raspberry Pi deploy/build completed successfully.
+echo To run it on the Pi display, use:
+echo   run_raspberry_pi_game.bat

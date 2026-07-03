@@ -26,6 +26,19 @@ These notes capture the project shape we want to preserve while iterating quickl
 ## Build And Deploy
 
 - Keep the Windows loop fast: `windows_build.bat` and `windows_test.bat` should remain the first verification path.
-- Keep Raspberry Pi deployment isolated to `deploy_to_raspberry_pi.bat`, `stop_raspberry_pi_game.bat`, and `Makefile.raspberry_pi`.
+- Keep Raspberry Pi deployment isolated to the Pi scripts and `Makefile.raspberry_pi`.
+- `deploy_to_raspberry_pi.bat` is the build-feedback path: sync and compile only.
+- `run_raspberry_pi_game.bat` launches the already-built remote binary.
+- `deploy_and_run_raspberry_pi.bat` is only the convenience wrapper when the display should update immediately.
+- `stop_raspberry_pi_game.bat` should remain safe to run independently before memory-heavy Pi builds.
 - When adding source folders that the Pi needs, update the deploy package list.
 - The Pi build targets `1920x1080` and raylib `PLATFORM_DRM`.
+- In Codex, SSH-based scripts need approval/escalation so they run with the real Windows OpenSSH tools instead of the sandbox deny shim.
+
+## City Map Format
+
+- Keep the authorable city map in `assets/cities/demo_city.csv`.
+- Treat the CSV as a visual grid: row is map `Y`, column is map `X`, and each cell is a pipe-separated stack of tokens.
+- Empty cells mean plain tiled carpet background; do not require a `grass` token.
+- Prefer compact readable map tokens such as `r_h`, `r_v`, `r_x`, `coin:star`, and `tree:round@x:y`.
+- Use the parsed city data for gameplay semantics later; avoid runtime collision behavior based on rendered sprite alpha pixels.

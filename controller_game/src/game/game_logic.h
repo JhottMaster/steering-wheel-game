@@ -260,7 +260,8 @@ inline bool IsNearlyStopped(float carSpeed) {
   return std::fabs(carSpeed) <= kGameStoppedSpeedThreshold;
 }
 
-inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons, float dt) {
+inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons, float dt,
+                       bool collectHardcodedCoins = true) {
   if (dt <= 0.0f) {
     return;
   }
@@ -325,5 +326,7 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
   game->carPosition.y =
       std::clamp(game->carPosition.y, kGameCarMargin, kGameMapSize - kGameCarMargin);
 
-  CollectNearbyCoins(game);
+  if (collectHardcodedCoins) {
+    CollectNearbyCoins(game);
+  }
 }

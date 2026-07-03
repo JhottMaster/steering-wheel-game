@@ -27,7 +27,8 @@ inline Vector2 ToVector2(GameVec2 value) {
   return Vector2{value.x, value.y};
 }
 
-inline Camera2D BuildGameCamera(const GameState& game, int screenWidth, int screenHeight) {
+inline Camera2D BuildGameCamera(const GameState& game, int screenWidth, int screenHeight,
+                                float mapWidth, float mapHeight) {
   constexpr float targetWorldWidth = 640.0f;
   constexpr float minZoom = 1.0f;
   constexpr float maxZoom = 2.4f;
@@ -38,50 +39,93 @@ inline Camera2D BuildGameCamera(const GameState& game, int screenWidth, int scre
   Camera2D camera = {};
   camera.offset =
       Vector2{static_cast<float>(screenWidth) * 0.5f, static_cast<float>(screenHeight) * 0.5f};
-  if (halfViewWidth * 2.0f >= kGameMapSize) {
-    camera.target.x = kGameMapSize * 0.5f;
+  if (halfViewWidth * 2.0f >= mapWidth) {
+    camera.target.x = mapWidth * 0.5f;
   } else {
-    camera.target.x = std::clamp(game.carPosition.x, halfViewWidth, kGameMapSize - halfViewWidth);
+    camera.target.x = std::clamp(game.carPosition.x, halfViewWidth, mapWidth - halfViewWidth);
   }
-  if (halfViewHeight * 2.0f >= kGameMapSize) {
-    camera.target.y = kGameMapSize * 0.5f;
+  if (halfViewHeight * 2.0f >= mapHeight) {
+    camera.target.y = mapHeight * 0.5f;
   } else {
-    camera.target.y = std::clamp(game.carPosition.y, halfViewHeight, kGameMapSize - halfViewHeight);
+    camera.target.y = std::clamp(game.carPosition.y, halfViewHeight, mapHeight - halfViewHeight);
   }
   camera.rotation = 0.0f;
   camera.zoom = zoom;
   return camera;
 }
+
+inline void DrawTextureCover(Texture2D texture, Rectangle destination, float rotationDeg = 0.0f) {
+  if (!TextureLoaded(texture)) {
+    return;
+  }
+
+  const Rectangle source = {0.0f, 0.0f, static_cast<float>(texture.width),
+                            static_cast<float>(texture.height)};
+  DrawTexturePro(texture, source, destination, Vector2{0.0f, 0.0f}, rotationDeg, WHITE);
+}
+
+inline void DrawCityTerrain(const GameAssets& assets, const CityMap& city) {
+  for (int row = 0; row < city.rows; ++row) {
+    for (int column = 0; column < city.columns; ++column) {
+      const Rectangle destination = {column * kCityTileSize, row * kCityTileSize, kCityTileSize,
+                                     kCityTileSize};
+      if (TextureLoaded(assets.terrain)) {
+        DrawTextureCover(assets.terrain, destination);
+      } else {
+        DrawRectangleRec(destination, Color{68, 142, 134, 255});
+      }
+    }
+  }
+}
+
+inline void DrawCityVisuals(const GameAssets& assets, const CityMap& city) {
+  for (const CityVisual& visual : city.visuals) {
+    const Texture2D texture = GetCityTexture(assets, visual.sprite);
+    const Rectangle destination = {visual.x, visual.y, visual.width, visual.height};
+    if (TextureLoaded(texture)) {
+      DrawTextureCover(texture, destination, visual.rotationDeg);
+    } else {
+      DrawRectangleLinesEx(destination, 3.0f, Color{255, 80, 80, 255});
+    }
+  }
+}
 }  // namespace game_view_detail
 
-inline void DrawGame(const GameState& game, const GameAssets& assets, bool hasFreshPackets,
-                     bool hasAnyPacket, bool isBroadcastingForLoss, const std::string& localIpText,
-                     int screenWidth, int screenHeight) {
+inline void DrawGame(const GameState& game, const GameAssets& assets, const CityMap& city,
+                     bool hasFreshPackets, bool hasAnyPacket, bool isBroadcastingForLoss,
+                     const std::string& localIpText, int screenWidth, int screenHeight) {
   ClearBackground(Color{60, 133, 126, 255});
 
-  const Camera2D camera = game_view_detail::BuildGameCamera(game, screenWidth, screenHeight);
+  const bool hasCity = city.columns > 0 && city.rows > 0;
+  const float mapWidth = hasCity ? city.columns * kCityTileSize : kGameMapSize;
+  const float mapHeight = hasCity ? city.rows * kCityTileSize : kGameMapSize;
+  const Camera2D camera =
+      game_view_detail::BuildGameCamera(game, screenWidth, screenHeight, mapWidth, mapHeight);
   BeginMode2D(camera);
-  if (TextureLoaded(assets.map)) {
-    const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.map.width),
-                              static_cast<float>(assets.map.height)};
+  if (hasCity) {
+    game_view_detail::DrawCityTerrain(assets, city);
+    game_view_detail::DrawCityVisuals(assets, city);
+  } else if (TextureLoaded(assets.terrain)) {
     const Rectangle destination = {0.0f, 0.0f, kGameMapSize, kGameMapSize};
-    DrawTexturePro(assets.map, source, destination, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+    game_view_detail::DrawTextureCover(assets.terrain, destination);
   } else {
     DrawRectangle(0, 0, static_cast<int>(kGameMapSize), static_cast<int>(kGameMapSize),
                   Color{68, 142, 134, 255});
   }
 
-  for (const CoinState& coin : game.coins) {
-    if (coin.collected) {
-      continue;
-    }
-    if (TextureLoaded(assets.coin)) {
-      const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.coin.width),
-                                static_cast<float>(assets.coin.height)};
-      const Rectangle destination = {coin.position.x, coin.position.y, 46.0f, 46.0f};
-      DrawTexturePro(assets.coin, source, destination, Vector2{23.0f, 23.0f}, 0.0f, WHITE);
-    } else {
-      DrawCircleV(game_view_detail::ToVector2(coin.position), 22.0f, GOLD);
+  if (!hasCity) {
+    for (const CoinState& coin : game.coins) {
+      if (coin.collected) {
+        continue;
+      }
+      if (TextureLoaded(assets.coin)) {
+        const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.coin.width),
+                                  static_cast<float>(assets.coin.height)};
+        const Rectangle destination = {coin.position.x, coin.position.y, 46.0f, 46.0f};
+        DrawTexturePro(assets.coin, source, destination, Vector2{23.0f, 23.0f}, 0.0f, WHITE);
+      } else {
+        DrawCircleV(game_view_detail::ToVector2(coin.position), 22.0f, GOLD);
+      }
     }
   }
 
@@ -111,8 +155,13 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, bool hasFr
 
   DrawRectangle(20, 20, leftPanelWidth, 122, Color{18, 28, 32, 185});
   DrawText("Road Carpet Drive", 38, 36, 30, Color{255, 244, 205, 255});
-  DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 40, 74,
-           22, Color{232, 236, 224, 255});
+  if (hasCity) {
+    DrawText(TextFormat("city: %d x %d tiles", city.columns, city.rows), 40, 74, 22,
+             Color{232, 236, 224, 255});
+  } else {
+    DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 40, 74,
+             22, Color{232, 236, 224, 255});
+  }
   DrawText(TextFormat("drive: %s   speed: %.0f",
                       game.driveMode == DriveMode::kAuto ? "auto" : "button", game.carSpeed),
            40, 104, 20, Color{232, 236, 224, 255});

@@ -108,6 +108,7 @@ int main() {
   InitAudioDevice();
 
   GameAssets gameAssets = LoadGameAssets();
+  CityMap city = LoadCityMap(game_assets_detail::FindCityPath("demo_city.csv"));
   GameAudio gameAudio = LoadGameAudio();
   GameState game;
   SensorFrame latestFrame;
@@ -136,7 +137,7 @@ int main() {
     if (IsKeyPressed(KEY_T)) {
       appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
     }
-    if (appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
+    if (appMode == AppMode::kGame && IsKeyPressed(KEY_ONE)) {
       ToggleDriveMode(&game);
     }
 
@@ -172,8 +173,8 @@ int main() {
     }
 
     const float dt = GetFrameTime();
-    const float keyboardDirection = static_cast<float>(IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) -
-                                    static_cast<float>(IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A));
+    const float keyboardDirection = static_cast<float>(IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) -
+                                    static_cast<float>(IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D));
     if (keyboardDirection != 0.0f) {
       manualAngleDeg += keyboardDirection * kKeyboardStepPerSecond * dt;
     }
@@ -295,7 +296,7 @@ int main() {
             (!hasFreshPackets && (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S))),
     };
     if (appMode == AppMode::kGame) {
-      UpdateGame(&game, gameSteeringInput, gameButtons, dt);
+      UpdateGame(&game, gameSteeringInput, gameButtons, dt, city.visuals.empty());
     }
     UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame);
 
@@ -304,7 +305,7 @@ int main() {
 
     BeginDrawing();
     if (appMode == AppMode::kGame) {
-      DrawGame(game, gameAssets, hasFreshPackets, hasAnyPacket, wasBroadcastingForLoss,
+      DrawGame(game, gameAssets, city, hasFreshPackets, hasAnyPacket, wasBroadcastingForLoss,
                localIpText, screenWidth, screenHeight);
       EndDrawing();
       continue;
