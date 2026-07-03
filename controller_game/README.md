@@ -2,6 +2,13 @@
 
 Shared `raylib` game code for both the Windows desktop dev loop and the Raspberry Pi console build.
 
+The entry point is shared, while platform-specific code is isolated in:
+
+- `src/platform_windows.h`
+- `src/platform_linux.h`
+
+This keeps networking, local IP discovery, window defaults, and small `raylib` API differences out of the main game loop.
+
 ## What It Does
 
 - listens on `UDP` port `4210`
@@ -78,6 +85,8 @@ windows_test.bat
 
 The Windows build first checks for a `raylib` checkout at `..\raylib`. If that is missing, it falls back to the MSYS2 MINGW64 raylib package, or you can set `RAYLIB_DIR`.
 
+The Windows executable is statically linked against `libraylib.a` when available, so double-clicking `build\bin\steering_wheel_game.exe` does not require `libraylib.dll` beside it.
+
 ### Raspberry Pi Console Build
 
 Build `raylib` for `PLATFORM_DRM`, then from this folder run:
@@ -95,6 +104,8 @@ make -f Makefile.raspberry_pi RAYLIB_DIR=/path/to/raylib
 
 This Pi build uses the same gameplay code, but switches to a fixed `1920x1080` console-style setup.
 
+The Raspberry Pi makefile links `-latomic` because the Pi 3 toolchain may need it for raylib's audio code.
+
 ## Remote Pi Deploy Loop
 
 For Windows-to-Pi development there is also:
@@ -109,8 +120,18 @@ The deploy script:
 - syncs the shared game files to the Pi over `ssh` / `scp`
 - runs `Makefile.raspberry_pi` remotely and streams build errors back to your terminal
 - stops the previous game process if one is running
-- launches the new Pi build in the background if the build succeeds
+- launches the new Pi build detached if the build succeeds
+- writes runtime output to `/tmp/steering_wheel_console.log`
 
 The stop script only runs the remote process stop step, which is useful when the Pi game is already running and you want the display back.
 
-Create a local `raspberry_pi_config.bat` from `raspberry_pi_config.example.bat` and fill in your Pi host, username, and remote path first. Absolute Linux paths are the safest choice for `PI_REMOTE_DIR` and `PI_RAYLIB_DIR`.
+Create a local `raspberry_pi_config.bat` from `raspberry_pi_config.example.bat` and fill in your Pi host, username, remote path, and raylib path first:
+
+```text
+set "PI_HOST=raspberry-pi-game"
+set "PI_USER=pablo"
+set "PI_REMOTE_DIR=/home/pablo/steering-wheel-game/controller_game"
+set "PI_RAYLIB_DIR=/home/pablo/raylib"
+```
+
+Absolute Linux paths are the safest choice for `PI_REMOTE_DIR` and `PI_RAYLIB_DIR`. SSH keys are recommended so deploys do not prompt for a password on every `ssh` / `scp` step.

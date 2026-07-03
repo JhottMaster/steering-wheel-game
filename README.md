@@ -46,6 +46,9 @@ For Windows-to-Pi remote deploys, use:
 
 ```text
 controller_game\deploy_to_raspberry_pi.bat
+controller_game\stop_raspberry_pi_game.bat
 ```
+
+Create `controller_game\raspberry_pi_config.bat` from `controller_game\raspberry_pi_config.example.bat` before deploying. The deploy script copies the game package to the Pi, builds it remotely, stops any running copy, starts the new build detached, and writes runtime logs to `/tmp/steering_wheel_console.log`.
 
 More detail is in [`controller_game/README.md`](controller_game/README.md).
