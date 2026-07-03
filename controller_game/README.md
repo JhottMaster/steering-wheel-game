@@ -2,12 +2,16 @@
 
 Shared `raylib` game code for both the Windows desktop dev loop and the Raspberry Pi console build.
 
-The entry point is shared, while platform-specific code is isolated in:
+`src/main.cpp` owns the app setup and frame loop so it remains a useful starting point. Most modules keep their implementation in the header to make browsing the game easier. The rest of `src/` is organized by responsibility:
 
-- `src/platform_windows.h`
-- `src/platform_linux.h`
+- `src/game/`: Road Carpet Drive logic, assets, audio, and game rendering
+- `src/input/`: shared controller packet polling and packet-to-`SensorFrame` parsing behavior
+- `src/views/`: secondary screens such as the hardware test dashboard
+- `src/platform/`: Windows and Linux/Raspberry Pi networking, local IP lookup, and window defaults
 
-This keeps networking, local IP discovery, window defaults, and small `raylib` API differences out of the main game loop.
+This keeps networking, local IP discovery, window defaults, and small `raylib` API differences out of gameplay code.
+
+Project structure preferences are captured in [`DEVELOPMENT_GUIDELINES.md`](DEVELOPMENT_GUIDELINES.md). In short: prefer header-oriented modules for this small game, keep `main.cpp` readable enough to understand the frame loop, and keep platform-specific socket/window details behind `src/platform/`.
 
 ## What It Does
 

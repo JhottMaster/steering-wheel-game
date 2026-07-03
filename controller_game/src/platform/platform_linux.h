@@ -1,8 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "game_logic.h"
+#include "../input/datagram_receive.h"
 #include "raylib.h"
 
 namespace platform {
@@ -106,36 +106,25 @@ struct UdpReceiver {
     }
   }
 
-  ~UdpReceiver() { Close(); }
-};
-
-inline bool PollLatestSensorFrame(UdpReceiver* receiver, SensorFrame* frame) {
-  bool receivedFrame = false;
-  std::array<char, 256> buffer{};
-
-  while (true) {
+  DatagramReceiveStatus ReceiveDatagram(char* buffer, int capacity, int* receivedBytes) {
     sockaddr_in sender{};
     socklen_t senderLength = sizeof(sender);
-    const int receivedBytes =
-        recvfrom(receiver->socket, buffer.data(), buffer.size() - 1, 0,
+    const int bytes =
+        recvfrom(socket, buffer, static_cast<size_t>(capacity), 0,
                  reinterpret_cast<sockaddr*>(&sender), &senderLength);
-    if (receivedBytes < 0) {
+    if (bytes < 0) {
       if (errno == EWOULDBLOCK || errno == EAGAIN) {
-        break;
+        return DatagramReceiveStatus::kWouldBlock;
       }
-      return receivedFrame;
+      return DatagramReceiveStatus::kError;
     }
 
-    buffer[receivedBytes] = '\0';
-    SensorFrame parsedFrame;
-    if (ParsePacket(buffer.data(), &parsedFrame)) {
-      *frame = parsedFrame;
-      receivedFrame = true;
-    }
+    *receivedBytes = bytes;
+    return DatagramReceiveStatus::kPacket;
   }
 
-  return receivedFrame;
-}
+  ~UdpReceiver() { Close(); }
+};
 
 inline std::vector<std::string> GetLocalIpv4Addresses() {
   std::vector<std::string> addresses;

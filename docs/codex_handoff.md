@@ -223,12 +223,18 @@ docs/xiao_bno055_bringup.md
 firmware/xiao_bno055_smoketest/xiao_bno055_smoketest.ino
 ```
 
-There is also now a very small cross-platform game/input proof of concept in the repo:
+There is also now a shared Windows/Raspberry Pi raylib game in the repo:
 
 ```text
-controller_poc/
+controller_game/
 docs/udp_raylib_poc.md
 firmware/xiao_bno055_udp_sender/xiao_bno055_udp_sender.ino
+```
+
+Current game development preferences are captured here:
+
+```text
+controller_game/DEVELOPMENT_GUIDELINES.md
 ```
 
 Current test wiring:

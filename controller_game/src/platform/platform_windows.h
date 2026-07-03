@@ -14,8 +14,6 @@
 #endif
 
 #include <algorithm>
-#include <array>
-#include <cerrno>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -23,7 +21,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#include "game_logic.h"
+#include "../input/datagram_receive.h"
 #include "raylib.h"
 
 #pragma comment(lib, "ws2_32.lib")
@@ -107,37 +105,25 @@ struct UdpReceiver {
     }
   }
 
-  ~UdpReceiver() { Close(); }
-};
-
-inline bool PollLatestSensorFrame(UdpReceiver* receiver, SensorFrame* frame) {
-  bool receivedFrame = false;
-  std::array<char, 256> buffer{};
-
-  while (true) {
+  DatagramReceiveStatus ReceiveDatagram(char* buffer, int capacity, int* receivedBytes) {
     sockaddr_in sender{};
     int senderLength = sizeof(sender);
-    const int receivedBytes =
-        recvfrom(receiver->socket, buffer.data(), static_cast<int>(buffer.size()) - 1, 0,
-                 reinterpret_cast<sockaddr*>(&sender), &senderLength);
-    if (receivedBytes == SOCKET_ERROR) {
+    const int bytes = recvfrom(socket, buffer, capacity, 0, reinterpret_cast<sockaddr*>(&sender),
+                               &senderLength);
+    if (bytes == SOCKET_ERROR) {
       const int error = WSAGetLastError();
       if (error == WSAEWOULDBLOCK) {
-        break;
+        return DatagramReceiveStatus::kWouldBlock;
       }
-      return receivedFrame;
+      return DatagramReceiveStatus::kError;
     }
 
-    buffer[receivedBytes] = '\0';
-    SensorFrame parsedFrame;
-    if (ParsePacket(buffer.data(), &parsedFrame)) {
-      *frame = parsedFrame;
-      receivedFrame = true;
-    }
+    *receivedBytes = bytes;
+    return DatagramReceiveStatus::kPacket;
   }
 
-  return receivedFrame;
-}
+  ~UdpReceiver() { Close(); }
+};
 
 inline std::vector<std::string> GetLocalIpv4Addresses() {
   std::vector<std::string> addresses;

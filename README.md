@@ -52,3 +52,5 @@ controller_game\stop_raspberry_pi_game.bat
 Create `controller_game\raspberry_pi_config.bat` from `controller_game\raspberry_pi_config.example.bat` before deploying. The deploy script copies the game package to the Pi, builds it remotely, stops any running copy, starts the new build detached, and writes runtime logs to `/tmp/steering_wheel_console.log`.
 
 More detail is in [`controller_game/README.md`](controller_game/README.md).
+
+Game source layout and future-edit guidelines are in [`controller_game/DEVELOPMENT_GUIDELINES.md`](controller_game/DEVELOPMENT_GUIDELINES.md).

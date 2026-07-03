@@ -3,7 +3,7 @@ CXXFLAGS ?= -std=c++17 -O2
 CPPFLAGS ?= -DSTEERING_WHEEL_RASPBERRY_PI
 
 SRC = src/main.cpp
-TEST_SRC = src/game_logic_tests.cpp
+TEST_SRC = src/game/game_logic_tests.cpp
 BUILD_DIR = build
 BIN_DIR = $(BUILD_DIR)/bin
 OUTPUT = $(BIN_DIR)/steering_wheel_console
@@ -24,11 +24,11 @@ run: $(OUTPUT)
 test: $(TEST_OUTPUT)
 	./$(TEST_OUTPUT)
 
-$(OUTPUT): $(SRC) src/game_logic.h src/platform_linux.h
+$(OUTPUT): $(SRC) src/game/game_assets.h src/game/game_audio.h src/game/game_logic.h src/game/game_view.h src/input/datagram_receive.h src/input/sensor_receiver.h src/views/hardware_test_view.h src/platform/platform_linux.h
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
 
-$(TEST_OUTPUT): $(TEST_SRC) src/game_logic.h
+$(TEST_OUTPUT): $(TEST_SRC) src/game/game_logic.h
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
 
