@@ -7,12 +7,21 @@ namespace {
 void TestPacketParser() {
   SensorFrame frame;
   assert(!ParsePacket("roll=1.0,pitch=2.0,heading=3.0", &frame));
-  assert(ParsePacket("roll=1.5,pitch=-2.0,heading=33.0,button1=1,button2=0", &frame));
-  assert(std::fabs(frame.roll - 1.5f) < 0.001f);
-  assert(std::fabs(frame.pitch + 2.0f) < 0.001f);
-  assert(std::fabs(frame.heading - 33.0f) < 0.001f);
+  assert(ParsePacket("qw=0.7071,qx=0.0,qy=0.7071,qz=0.0,button1=1,button2=0", &frame));
+  assert(std::fabs(frame.orientation.w - 0.7071f) < 0.001f);
+  assert(std::fabs(frame.orientation.x - 0.0f) < 0.001f);
+  assert(std::fabs(frame.orientation.y - 0.7071f) < 0.001f);
+  assert(std::fabs(frame.orientation.z - 0.0f) < 0.001f);
   assert(frame.button1Pressed);
   assert(!frame.button2Pressed);
+}
+
+void TestCenteredPitchTwist() {
+  const SensorFrame center = {SensorQuaternion{1.0f, 0.0f, 0.0f, 0.0f}, false, false};
+  const float halfTurn = std::sqrt(0.5f);
+  const SensorFrame turned = {SensorQuaternion{halfTurn, 0.0f, halfTurn, 0.0f}, false, false};
+  const float twistDeg = GetCenteredAxisDegrees(OrientationAxis::kPitch, turned, center);
+  assert(std::fabs(twistDeg - 90.0f) < 0.5f);
 }
 
 void TestAutoDriveAdvancesCar() {
@@ -54,6 +63,7 @@ void TestCoinCollection() {
 
 int main() {
   TestPacketParser();
+  TestCenteredPitchTwist();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestDriveModeToggle();

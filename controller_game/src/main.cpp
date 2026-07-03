@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -19,10 +20,17 @@
 
 namespace {
 constexpr int kUdpPort = 4210;
+constexpr int kServerDiscoveryPort = 4211;
+constexpr float kServerBeaconIntervalSeconds = 3.0f;
+constexpr float kServerBeaconStartDelaySeconds = 5.0f;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
+constexpr float kGameSteeringRangeDeg = 65.0f;
 constexpr float kKeyboardStepPerSecond = 35.0f;
 constexpr float kPacketTimeoutSeconds = 2.0f;
-constexpr float kSteeringDirection = 1.0f;
+constexpr float kDisplaySteeringDirection = -1.0f;
+constexpr float kGameSteeringDirection = -1.0f;
+constexpr float kRecenterChordHoldSeconds = 5.0f;
+constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
 
 enum class AppMode {
   kGame,
@@ -43,8 +51,11 @@ std::string JoinLocalIps(const std::vector<std::string>& addresses) {
 
 int main() {
   platform::UdpReceiver receiver;
+  platform::UdpBroadcaster broadcaster;
   const bool udpReady = receiver.Open(kUdpPort);
+  const bool broadcastReady = broadcaster.Open();
   const std::string localIpText = JoinLocalIps(platform::GetLocalIpv4Addresses());
+  const auto appStartTime = std::chrono::steady_clock::now();
 
   SetConfigFlags(platform::GetWindowConfigFlags());
   InitWindow(platform::kWindowWidth, platform::kWindowHeight, platform::kWindowTitle);
@@ -63,6 +74,12 @@ int main() {
   AppMode appMode = AppMode::kGame;
   bool hasCenterFrame = false;
   float manualAngleDeg = 0.0f;
+  auto lastBeaconTime = std::chrono::steady_clock::time_point{};
+  bool hasEverReceivedPacket = false;
+  bool wasBroadcastingForLoss = false;
+  bool simultaneousButtonsWereDown = false;
+  auto simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
+  bool recenterChordTriggered = false;
 
   while (!WindowShouldClose()) {
     if (platform::ShouldToggleFullscreen()) {
@@ -88,6 +105,8 @@ int main() {
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
       lastPacketTime = std::chrono::steady_clock::now();
+      hasEverReceivedPacket = true;
+      wasBroadcastingForLoss = false;
       if (!hasCenterFrame) {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
@@ -106,35 +125,91 @@ int main() {
     const float secondsSincePacket = std::chrono::duration<float>(now - lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
     const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
+    const float secondsSinceBeacon =
+        lastBeaconTime == std::chrono::steady_clock::time_point{}
+            ? kServerBeaconIntervalSeconds
+            : std::chrono::duration<float>(now - lastBeaconTime).count();
 
-    float sourceAngleDeg = GetAxisDegrees(displayAxis, lastGoodFrame);
-    if (!hasFreshPackets && !hasAnyPacket) {
-      sourceAngleDeg = manualAngleDeg;
+    const bool shouldStartInitialBroadcast = !hasEverReceivedPacket;
+    const bool shouldStartLossBroadcast =
+        hasEverReceivedPacket && !hasFreshPackets &&
+        std::chrono::duration<float>(now - lastPacketTime).count() >= kServerBeaconStartDelaySeconds;
+    const bool shouldBroadcast = shouldStartInitialBroadcast || shouldStartLossBroadcast;
+
+    if (shouldStartLossBroadcast && !wasBroadcastingForLoss) {
+      lastBeaconTime = std::chrono::steady_clock::time_point{};
+      wasBroadcastingForLoss = true;
     }
+
+    if (broadcastReady && shouldBroadcast && secondsSinceBeacon >= kServerBeaconIntervalSeconds) {
+      broadcaster.SendBroadcast(kServerDiscoveryMessage,
+                                static_cast<int>(sizeof(kServerDiscoveryMessage) - 1),
+                                kServerDiscoveryPort);
+      std::printf("Server discovery broadcast sent to UDP %d: %s\n", kServerDiscoveryPort,
+                  kServerDiscoveryMessage);
+      lastBeaconTime = now;
+    }
+
+    const bool simultaneousButtonsDown =
+        hasFreshPackets && lastGoodFrame.button1Pressed && lastGoodFrame.button2Pressed;
+    if (simultaneousButtonsDown && !simultaneousButtonsWereDown) {
+      simultaneousButtonsDownSince = now;
+      recenterChordTriggered = false;
+      std::printf("Recenter chord started. Hold both buttons for %.1f seconds.\n",
+                  kRecenterChordHoldSeconds);
+    }
+    if (simultaneousButtonsDown && !recenterChordTriggered &&
+        simultaneousButtonsDownSince != std::chrono::steady_clock::time_point{} &&
+        std::chrono::duration<float>(now - simultaneousButtonsDownSince).count() >=
+            kRecenterChordHoldSeconds) {
+      if (hasAnyPacket) {
+        centerFrame = lastGoodFrame;
+        hasCenterFrame = true;
+        std::printf("Controller center reset after %.1f second simultaneous button hold.\n",
+                    kRecenterChordHoldSeconds);
+      }
+      recenterChordTriggered = true;
+    }
+    if (!simultaneousButtonsDown && simultaneousButtonsWereDown) {
+      const float heldSeconds =
+          simultaneousButtonsDownSince == std::chrono::steady_clock::time_point{}
+              ? 0.0f
+              : std::chrono::duration<float>(now - simultaneousButtonsDownSince).count();
+      if (!recenterChordTriggered) {
+        std::printf("Recenter chord released after %.2f seconds.\n", heldSeconds);
+      }
+      simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
+      recenterChordTriggered = false;
+    }
+    simultaneousButtonsWereDown = simultaneousButtonsDown;
+
     if (IsKeyPressed(KEY_SPACE)) {
       if (hasAnyPacket) {
         centerFrame = lastGoodFrame;
         hasCenterFrame = true;
       } else {
         manualAngleDeg = 0.0f;
-        centerFrame = SensorFrame{};
-        hasCenterFrame = true;
+        hasCenterFrame = false;
       }
+      simultaneousButtonsDownSince = std::chrono::steady_clock::time_point{};
+      recenterChordTriggered = false;
     }
 
-    const float calibrationOffsetDeg =
-        hasCenterFrame ? GetAxisDegrees(displayAxis, centerFrame) : 0.0f;
-    const float centeredAngleDeg = sourceAngleDeg - calibrationOffsetDeg;
-    const float steeringAngleDeg = centeredAngleDeg * kSteeringDirection;
+    const float sourceAngleDeg =
+        hasAnyPacket ? GetAxisDegrees(displayAxis, lastGoodFrame) : manualAngleDeg;
+    const float centeredAngleDeg =
+        hasAnyPacket && hasCenterFrame
+            ? GetCenteredAxisDegrees(displayAxis, lastGoodFrame, centerFrame)
+            : sourceAngleDeg;
+    const float steeringAngleDeg = centeredAngleDeg * kDisplaySteeringDirection;
     const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
     const float gameSourceAngleDeg =
-        hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame) : manualAngleDeg;
-    const float gameCalibrationOffsetDeg =
-        hasCenterFrame ? GetAxisDegrees(DisplayAxis::kPitch, centerFrame) : 0.0f;
+        hasAnyPacket && hasCenterFrame
+            ? GetCenteredAxisDegrees(DisplayAxis::kPitch, lastGoodFrame, centerFrame)
+            : (hasAnyPacket ? GetAxisDegrees(DisplayAxis::kPitch, lastGoodFrame) : manualAngleDeg);
     const float gameSteeringInput =
-        ClampUnit(((gameSourceAngleDeg - gameCalibrationOffsetDeg) * kSteeringDirection) /
-                  kVisibleAngleRangeDeg);
+        ClampUnit((gameSourceAngleDeg * kGameSteeringDirection) / kGameSteeringRangeDeg);
     const GameButtons gameButtons = {
         (hasFreshPackets && lastGoodFrame.button1Pressed) ||
             (!hasFreshPackets && (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))),
@@ -151,7 +226,8 @@ int main() {
 
     BeginDrawing();
     if (appMode == AppMode::kGame) {
-      DrawGame(game, gameAssets, hasFreshPackets, localIpText, screenWidth, screenHeight);
+      DrawGame(game, gameAssets, hasFreshPackets, hasAnyPacket, wasBroadcastingForLoss,
+               localIpText, screenWidth, screenHeight);
       EndDrawing();
       continue;
     }

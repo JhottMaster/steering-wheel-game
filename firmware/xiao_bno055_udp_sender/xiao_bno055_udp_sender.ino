@@ -9,6 +9,8 @@
 namespace {
 constexpr char kWifiHostname[] = "steering-wheel-poc-esp32c3";
 constexpr uint16_t kHostPort = 4210;
+constexpr uint16_t kDiscoveryPort = 4211;
+constexpr char kDiscoveryMessage[] = "steering-wheel-server port=4210";
 constexpr int kSdaPin = D4;
 constexpr int kSclPin = D5;
 constexpr int kButton1Pin = D1;
@@ -34,23 +36,28 @@ constexpr uint32_t kStatusLedSetupCompleteFlashMs = 500;
 constexpr uint32_t kStatusLedSetupCompleteToggleMs = 50;
 constexpr uint32_t kStatusLedSetupCompleteBlankMs = 100;
 constexpr uint32_t kHealthReportIntervalMs = 5000;
-constexpr float kMinAngleDeltaDeg = 0.5f;
+constexpr uint32_t kDiscoveryHeartbeatIntervalMs = 3000;
+constexpr float kMinQuaternionDelta = 0.015f;
 uint32_t wifiAttemptCount = 0;
 uint32_t udpSendCount = 0;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire);
 WiFiUDP udp;
+WiFiUDP discoveryUdp;
 uint32_t lastPacketMs = 0;
 bool hasLastSentFrame = false;
-float lastSentHeading = 0.0f;
-float lastSentRoll = 0.0f;
-float lastSentPitch = 0.0f;
+float lastSentQuatW = 1.0f;
+float lastSentQuatX = 0.0f;
+float lastSentQuatY = 0.0f;
+float lastSentQuatZ = 0.0f;
 bool lastSentButton1Pressed = false;
 bool lastSentButton2Pressed = false;
 bool hasLastReportedButtons = false;
 bool lastReportedButton1Pressed = false;
 bool lastReportedButton2Pressed = false;
 uint32_t lastHealthReportMs = 0;
+IPAddress hostIp;
+bool hasHostIp = false;
 
 enum class StatusLedMode {
   kSetupBreathing,
@@ -114,8 +121,8 @@ const char* wifiStatusToString(wl_status_t status) {
   }
 }
 
-bool angleChangedEnough(float previousValue, float currentValue) {
-  return fabsf(currentValue - previousValue) >= kMinAngleDeltaDeg;
+bool quaternionComponentChangedEnough(float previousValue, float currentValue) {
+  return fabsf(currentValue - previousValue) >= kMinQuaternionDelta;
 }
 
 bool readButtonPressed(int pin) {
@@ -320,7 +327,7 @@ void printBnoDetails() {
   Serial.println(sensor.resolution);
 }
 
-void printRuntimeHealth(uint32_t now, float heading, float roll, float pitch,
+void printRuntimeHealth(uint32_t now, const imu::Quaternion& quaternion,
                         bool button1Pressed, bool button2Pressed) {
   if (!kSerialDebugEnabled) {
     return;
@@ -348,12 +355,20 @@ void printRuntimeHealth(uint32_t now, float heading, float roll, float pitch,
   Serial.println(WiFi.localIP());
   Serial.print("  udp_sent=");
   Serial.println(udpSendCount);
-  Serial.print("  orientation heading=");
-  Serial.print(heading);
-  Serial.print(" roll=");
-  Serial.print(roll);
-  Serial.print(" pitch=");
-  Serial.println(pitch);
+  Serial.print("  host_ip=");
+  if (hasHostIp) {
+    Serial.println(hostIp);
+  } else {
+    Serial.println("not discovered");
+  }
+  Serial.print("  quaternion w=");
+  Serial.print(quaternion.w(), 4);
+  Serial.print(" x=");
+  Serial.print(quaternion.x(), 4);
+  Serial.print(" y=");
+  Serial.print(quaternion.y(), 4);
+  Serial.print(" z=");
+  Serial.println(quaternion.z(), 4);
   Serial.print("  calibration sys=");
   Serial.print(systemCalibration);
   Serial.print(" gyro=");
@@ -443,6 +458,8 @@ bool connectToWifi() {
   Serial.println(kWifiSecretsSsid);
   Serial.print("  Host IP: ");
   Serial.println(kWifiSecretsHostIp);
+  Serial.print("  Discovery port: ");
+  Serial.println(kDiscoveryPort);
   Serial.print("  UDP port: ");
   Serial.println(kHostPort);
 
@@ -466,8 +483,6 @@ bool connectToWifi() {
       Serial.print("Signal strength: ");
       Serial.print(WiFi.RSSI());
       Serial.println(" dBm");
-      requestSetupCompleteFlash(now);
-      Serial.println("Status LED: setup complete flash.");
       return true;
     }
 
@@ -493,6 +508,83 @@ bool connectToWifi() {
   Serial.println("If this keeps failing, test with a simple 2.4 GHz phone hotspot to separate router issues from board issues.");
   showErrorStatusLedFor(4000);
   return false;
+}
+
+bool discoverHost() {
+  if (hasHostIp) {
+    return true;
+  }
+
+  Serial.println("Listening for controller game server broadcast...");
+  Serial.print("  Discovery port: ");
+  Serial.println(kDiscoveryPort);
+  Serial.print("  Expected message: ");
+  Serial.println(kDiscoveryMessage);
+
+  if (!discoveryUdp.begin(kDiscoveryPort)) {
+    Serial.println("Failed to open UDP discovery listener.");
+    showErrorStatusLedFor(3000);
+    return false;
+  }
+
+  uint32_t lastDiscoveryHeartbeatMs = 0;
+  while (!hasHostIp) {
+    const uint32_t now = millis();
+    updateStatusLed(now);
+
+    if (lastDiscoveryHeartbeatMs == 0 ||
+        now - lastDiscoveryHeartbeatMs >= kDiscoveryHeartbeatIntervalMs) {
+      Serial.print("Still listening for server discovery on UDP ");
+      Serial.print(kDiscoveryPort);
+      Serial.print(" from local IP ");
+      Serial.println(WiFi.localIP());
+      lastDiscoveryHeartbeatMs = now;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Wi-Fi disconnected while waiting for server discovery.");
+      discoveryUdp.stop();
+      return false;
+    }
+
+    const int packetSize = discoveryUdp.parsePacket();
+    if (packetSize <= 0) {
+      delay(5);
+      continue;
+    }
+
+    char packet[96];
+    const int bytesRead =
+        discoveryUdp.read(packet, static_cast<int>(sizeof(packet) - 1));
+    if (bytesRead <= 0) {
+      delay(5);
+      continue;
+    }
+    packet[bytesRead] = '\0';
+
+    Serial.print("Discovery packet from ");
+    Serial.print(discoveryUdp.remoteIP());
+    Serial.print(":");
+    Serial.print(discoveryUdp.remotePort());
+    Serial.print(" -> ");
+    Serial.println(packet);
+
+    if (strcmp(packet, kDiscoveryMessage) != 0) {
+      Serial.println("Ignoring unexpected discovery payload.");
+      delay(5);
+      continue;
+    }
+
+    hostIp = discoveryUdp.remoteIP();
+    hasHostIp = true;
+  }
+
+  discoveryUdp.stop();
+  Serial.print("Locked server IP: ");
+  Serial.println(hostIp);
+  requestSetupCompleteFlash(millis());
+  Serial.println("Status LED: setup complete flash.");
+  return true;
 }
 }  // namespace
 
@@ -543,6 +635,21 @@ void setup() {
     Serial.println(" ms...");
     waitWithStatusLed(kWifiRetryDelayMs);
   }
+
+  while (!discoverHost()) {
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Still waiting for a valid server discovery packet...");
+      waitWithStatusLed(250);
+      continue;
+    }
+
+    while (!connectToWifi()) {
+      Serial.print("Retrying Wi-Fi connection in ");
+      Serial.print(kWifiRetryDelayMs);
+      Serial.println(" ms...");
+      waitWithStatusLed(kWifiRetryDelayMs);
+    }
+  }
 }
 
 void loop() {
@@ -554,26 +661,29 @@ void loop() {
   }
   lastPacketMs = now;
 
-  imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-  const float heading = euler.x();
-  const float roll = euler.z();
-  const float pitch = euler.y();
+  const imu::Quaternion quaternion = bno.getQuat();
+  const float quatW = quaternion.w();
+  const float quatX = quaternion.x();
+  const float quatY = quaternion.y();
+  const float quatZ = quaternion.z();
   const bool button1Pressed = readButtonPressed(kButton1Pin);
   const bool button2Pressed = readButtonPressed(kButton2Pin);
   reportButtonChanges(button1Pressed, button2Pressed);
-  printRuntimeHealth(now, heading, roll, pitch, button1Pressed, button2Pressed);
+  printRuntimeHealth(now, quaternion, button1Pressed, button2Pressed);
 
   const bool shouldSend =
-      !hasLastSentFrame || angleChangedEnough(lastSentHeading, heading) ||
-      angleChangedEnough(lastSentRoll, roll) || angleChangedEnough(lastSentPitch, pitch) ||
+      !hasLastSentFrame || quaternionComponentChangedEnough(lastSentQuatW, quatW) ||
+      quaternionComponentChangedEnough(lastSentQuatX, quatX) ||
+      quaternionComponentChangedEnough(lastSentQuatY, quatY) ||
+      quaternionComponentChangedEnough(lastSentQuatZ, quatZ) ||
       lastSentButton1Pressed != button1Pressed || lastSentButton2Pressed != button2Pressed;
   if (!shouldSend) {
     return;
   }
 
   char packet[128];
-  snprintf(packet, sizeof(packet), "roll=%.2f,pitch=%.2f,heading=%.2f,button1=%d,button2=%d",
-           roll, pitch, heading, button1Pressed ? 1 : 0, button2Pressed ? 1 : 0);
+  snprintf(packet, sizeof(packet), "qw=%.5f,qx=%.5f,qy=%.5f,qz=%.5f,button1=%d,button2=%d",
+           quatW, quatX, quatY, quatZ, button1Pressed ? 1 : 0, button2Pressed ? 1 : 0);
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Wi-Fi disconnected while sending. Attempting reconnect...");
@@ -585,7 +695,13 @@ void loop() {
     }
   }
 
-  if (!udp.beginPacket(kWifiSecretsHostIp, kHostPort)) {
+  if (!hasHostIp) {
+    Serial.println("No discovered host IP is available.");
+    showErrorStatusLedFor(3000);
+    return;
+  }
+
+  if (!udp.beginPacket(hostIp, kHostPort)) {
     Serial.println("Failed to begin UDP packet.");
     showErrorStatusLedFor(3000);
     return;
@@ -600,16 +716,17 @@ void loop() {
 
   ++udpSendCount;
   hasLastSentFrame = true;
-  lastSentHeading = heading;
-  lastSentRoll = roll;
-  lastSentPitch = pitch;
+  lastSentQuatW = quatW;
+  lastSentQuatX = quatX;
+  lastSentQuatY = quatY;
+  lastSentQuatZ = quatZ;
   lastSentButton1Pressed = button1Pressed;
   lastSentButton2Pressed = button2Pressed;
   requestRuntimeSolid(millis());
   Serial.print("UDP #");
   Serial.print(udpSendCount);
   Serial.print(" sent to ");
-  Serial.print(kWifiSecretsHostIp);
+  Serial.print(hostIp);
   Serial.print(":");
   Serial.print(kHostPort);
   Serial.print(" -> ");

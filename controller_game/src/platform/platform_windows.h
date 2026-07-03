@@ -27,8 +27,8 @@
 #pragma comment(lib, "ws2_32.lib")
 
 namespace platform {
-constexpr int kWindowWidth = 1600;
-constexpr int kWindowHeight = 900;
+constexpr int kWindowWidth = 1024;
+constexpr int kWindowHeight = 768;
 constexpr bool kConsoleBuild = false;
 constexpr const char* kWindowTitle = "Steering Wheel Controller Game";
 constexpr const char* kHeaderTitle = "Toddler Steering Wheel Game";
@@ -44,8 +44,7 @@ inline unsigned int GetWindowConfigFlags() {
 }
 
 inline void ApplyPostWindowInit() {
-  SetWindowMinSize(960, 540);
-  MaximizeWindow();
+  SetWindowMinSize(1024, 768);
 }
 
 inline bool ShouldToggleFullscreen() {
@@ -123,6 +122,62 @@ struct UdpReceiver {
   }
 
   ~UdpReceiver() { Close(); }
+};
+
+struct UdpBroadcaster {
+  SocketHandle socket = kInvalidSocket;
+  bool winsockStarted = false;
+
+  bool Open() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+      return false;
+    }
+    winsockStarted = true;
+
+    socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket == kInvalidSocket) {
+      Close();
+      return false;
+    }
+
+    BOOL enabled = TRUE;
+    if (setsockopt(socket, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&enabled),
+                   sizeof(enabled)) != 0) {
+      Close();
+      return false;
+    }
+
+    return true;
+  }
+
+  bool SendBroadcast(const char* payload, int payloadLength, int port) {
+    if (socket == kInvalidSocket) {
+      return false;
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    address.sin_port = htons(static_cast<uint16_t>(port));
+
+    return sendto(socket, payload, payloadLength, 0, reinterpret_cast<const sockaddr*>(&address),
+                  sizeof(address)) == payloadLength;
+  }
+
+  void Close() {
+    if (socket != kInvalidSocket) {
+      closesocket(socket);
+      socket = kInvalidSocket;
+    }
+
+    if (winsockStarted) {
+      WSACleanup();
+      winsockStarted = false;
+    }
+  }
+
+  ~UdpBroadcaster() { Close(); }
 };
 
 inline std::vector<std::string> GetLocalIpv4Addresses() {

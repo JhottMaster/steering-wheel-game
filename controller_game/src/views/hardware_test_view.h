@@ -13,11 +13,7 @@
 #include "../game/game_logic.h"
 #include "raylib.h"
 
-enum class DisplayAxis {
-  kRoll,
-  kPitch,
-  kYaw,
-};
+using DisplayAxis = OrientationAxis;
 
 namespace hardware_test_view_detail {
 constexpr int kUdpPort = 4210;
@@ -26,14 +22,14 @@ constexpr float kDegToRad = 0.017453292519943295769f;
 inline const char* GetAxisLabel(DisplayAxis axis) {
   switch (axis) {
     case DisplayAxis::kRoll:
-      return "roll";
+      return "roll axis";
     case DisplayAxis::kPitch:
-      return "pitch";
+      return "pitch axis";
     case DisplayAxis::kYaw:
-      return "yaw";
+      return "yaw axis";
   }
 
-  return "pitch";
+  return "pitch axis";
 }
 
 inline Vector2 PointOnCircle(Vector2 center, float radius, float angleDeg) {
@@ -90,19 +86,6 @@ inline void DrawPanel(Rectangle bounds, Color fillColor) {
 }
 }  // namespace hardware_test_view_detail
 
-inline float GetAxisDegrees(DisplayAxis axis, const SensorFrame& frame) {
-  switch (axis) {
-    case DisplayAxis::kRoll:
-      return frame.roll;
-    case DisplayAxis::kPitch:
-      return frame.pitch;
-    case DisplayAxis::kYaw:
-      return frame.heading;
-  }
-
-  return frame.pitch;
-}
-
 inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
                              float sourceAngleDeg, float centeredAngleDeg,
                              float steeringAngleDeg, float normalizedValue, bool hasFreshPackets,
@@ -157,7 +140,8 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
   DrawText(TextFormat("axis: %s", hardware_test_view_detail::GetAxisLabel(displayAxis)), leftX, y,
            23, Color{46, 72, 88, 255});
   y += 38;
-  DrawText(TextFormat("raw: %.1f deg", sourceAngleDeg), leftX, y, 23, Color{46, 72, 88, 255});
+  DrawText(TextFormat("axis twist: %.1f deg", sourceAngleDeg), leftX, y, 23,
+           Color{46, 72, 88, 255});
   y += 38;
   DrawText(TextFormat("centered: %.1f deg", centeredAngleDeg), leftX, y, 23,
            Color{46, 72, 88, 255});
@@ -202,13 +186,26 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
   y += 56;
   DrawText("Latest packet", rightX, y, 22, Color{77, 92, 103, 255});
   y += 32;
-  DrawText(TextFormat("roll %.1f", lastGoodFrame.roll), rightX, y, 20, Color{46, 72, 88, 255});
-  y += 28;
-  DrawText(TextFormat("pitch %.1f", lastGoodFrame.pitch), rightX, y, 20,
+  DrawText(TextFormat("quat w %.3f", lastGoodFrame.orientation.w), rightX, y, 20,
            Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("heading %.1f", lastGoodFrame.heading), rightX, y, 20,
+  DrawText(TextFormat("quat x %.3f", lastGoodFrame.orientation.x), rightX, y, 20,
            Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("quat y %.3f", lastGoodFrame.orientation.y), rightX, y, 20,
+           Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("quat z %.3f", lastGoodFrame.orientation.z), rightX, y, 20,
+           Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("euler roll %.1f", QuaternionToRollDegrees(lastGoodFrame.orientation)),
+           rightX, y, 20, Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("euler pitch %.1f", QuaternionToPitchDegrees(lastGoodFrame.orientation)),
+           rightX, y, 20, Color{46, 72, 88, 255});
+  y += 28;
+  DrawText(TextFormat("euler yaw %.1f", QuaternionToYawDegrees(lastGoodFrame.orientation)),
+           rightX, y, 20, Color{46, 72, 88, 255});
   y += 28;
   DrawText(TextFormat("button1 %s", lastGoodFrame.button1Pressed ? "pressed" : "up"), rightX, y,
            20, Color{46, 72, 88, 255});

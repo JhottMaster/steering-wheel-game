@@ -19,7 +19,7 @@ Project structure preferences are captured in [`DEVELOPMENT_GUIDELINES.md`](DEVE
 - expects packets like:
 
 ```text
-roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
+qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 ```
 
 - defaults to the Road Carpet Drive game
@@ -27,8 +27,8 @@ roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 - drives a toy car around a generated 1024x1024 road-carpet map
 - uses generated sprites from `assets/sprites`
 - collects coin markers with a generous pickup radius
-- renders a steering wheel that turns with `pitch` by default in test mode
-- displays the latest `roll`, `pitch`, `heading`, and two button states from the controller
+- renders a steering wheel from quaternion-derived twist around the selected sensor axis
+- displays the latest quaternion, derived Euler readout, and two button states from the controller
 - shows `button2` as the red left lamp and `button1` as the green right lamp in test mode
 - falls back to keyboard input if no recent packets arrive
 
@@ -36,9 +36,9 @@ roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
 
 - `T`: toggle Road Carpet Drive / hardware test dashboard
 - `A`: toggle auto-drive / button-throttle mode in the game
-- `P`: use `pitch` for steering
-- `R`: use `roll` for debug comparison
-- `Y`: use `yaw` / `heading` for steering
+- `P`: use the sensor pitch-axis twist for steering
+- `R`: use the sensor roll-axis twist for debug comparison
+- `Y`: use the sensor yaw-axis twist for debug comparison
 - `SPACE`: set the current sensor orientation as center
 - `A` / `D` or left / right arrows: keyboard steering fallback input
 - `W` / up arrow: keyboard acceleration fallback in button-throttle mode

@@ -55,13 +55,17 @@ inline Camera2D BuildGameCamera(const GameState& game, int screenWidth, int scre
 }  // namespace game_view_detail
 
 inline void DrawGame(const GameState& game, const GameAssets& assets, bool hasFreshPackets,
-                     const std::string& localIpText, int screenWidth, int screenHeight) {
+                     bool hasAnyPacket, bool isBroadcastingForLoss, const std::string& localIpText,
+                     int screenWidth, int screenHeight) {
   ClearBackground(Color{60, 133, 126, 255});
 
   const Camera2D camera = game_view_detail::BuildGameCamera(game, screenWidth, screenHeight);
   BeginMode2D(camera);
   if (TextureLoaded(assets.map)) {
-    DrawTexture(assets.map, 0, 0, WHITE);
+    const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.map.width),
+                              static_cast<float>(assets.map.height)};
+    const Rectangle destination = {0.0f, 0.0f, kGameMapSize, kGameMapSize};
+    DrawTexturePro(assets.map, source, destination, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
   } else {
     DrawRectangle(0, 0, static_cast<int>(kGameMapSize), static_cast<int>(kGameMapSize),
                   Color{68, 142, 134, 255});
@@ -121,4 +125,11 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, bool hasFr
            hasFreshPackets ? Color{104, 230, 141, 255} : Color{246, 187, 87, 255});
   DrawText(TextFormat("FPS: %d", GetFPS()), rightTextX, 116, 19, Color{255, 244, 205, 255});
   DrawText(localIpText.c_str(), rightTextX, 140, 16, Color{176, 196, 186, 255});
+
+  if (hasAnyPacket && !hasFreshPackets) {
+    DrawRectangle(0, 0, screenWidth, 38, Color{153, 48, 32, 220});
+    DrawText(isBroadcastingForLoss ? "Controller connection lost - rediscovering..."
+                                   : "Controller connection lost",
+             20, 9, 20, Color{255, 240, 232, 255});
+  }
 }

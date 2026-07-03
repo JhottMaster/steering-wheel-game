@@ -23,13 +23,13 @@ Show a simple top-down Road Carpet Drive game by default, with a `T`-toggle hard
 1. The XIAO reads fused orientation data from the BNO055.
 2. The XIAO sends packets over Wi-Fi using `UDP`.
 3. The `raylib` app listens on port `4210`.
-4. In game mode, the app steers a toy car on a generated road-carpet map using `pitch` by default.
-5. In hardware test mode, the app rotates an on-screen steering wheel based on the selected incoming orientation axis.
+4. In game mode, the app steers a toy car on a generated road-carpet map using quaternion-derived twist around the sensor pitch axis by default.
+5. In hardware test mode, the app rotates an on-screen steering wheel based on the selected incoming quaternion-derived axis twist.
 
 Packet format:
 
 ```text
-roll=12.4,pitch=-3.1,heading=182.0,button1=0,button2=1
+qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 ```
 
 The current working firmware only sends when the orientation changes enough to matter, rather than streaming every frame while stationary.
@@ -49,13 +49,15 @@ REPLACE_WITH_WIFI_PASSWORD
 REPLACE_WITH_HOST_IP
 ```
 
-`REPLACE_WITH_HOST_IP` should be the IP address of the Windows or Linux machine running the `raylib` app.
+`REPLACE_WITH_HOST_IP` is now mainly a fallback / reference value. In the current discovery flow, the controller waits for the game server to advertise itself over UDP broadcast before it marks setup complete.
 
 Important note:
 
 - attach the XIAO's external Wi-Fi / BLE antenna before expecting reliable wireless behavior
 - the firmware sets a friendlier Wi-Fi hostname: `steering-wheel-poc-esp32c3`
 - the serial monitor prints explicit `UDP #... sent to ...` lines for successful sends
+- after Wi-Fi connects, the controller keeps the status LED in the breathing setup state until it hears a valid server discovery broadcast on UDP `4211`
+- once discovery succeeds, the controller locks onto that sender IP for the rest of the run and stops listening for other servers
 
 ## Serial Diagnostics
 
@@ -66,7 +68,7 @@ Open Serial Monitor at `115200` after upload. The firmware prints:
 - an `I2C` scan before initializing the BNO055; the BNO055 should usually appear at `0x28`
 - BNO055 sensor details after successful detection
 - visible Wi-Fi networks, connection status changes, local IP, and signal strength
-- a compact `Health:` block every `5` seconds with Wi-Fi status, UDP send count, orientation, calibration, and button states
+- a compact `Health:` block every `5` seconds with Wi-Fi status, UDP send count, quaternion orientation, calibration, and button states
 
 Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for live use. That disables Serial output and skips troubleshooting-only scans/reports while keeping the controller, Wi-Fi, UDP packets, buttons, and status LED behavior active.
 
@@ -76,16 +78,17 @@ Set `kSerialDebugEnabled` near the top of the firmware sketch to `false` for liv
 - `T` toggles between the game and hardware test dashboard
 - `F11` toggles fullscreen
 - `A` toggles auto-drive / button-throttle mode in the game
-- `P` uses `pitch` for steering
-- `R` uses `roll` for debug comparison
-- `Y` uses `yaw` / `heading` for debug comparison
-- `SPACE` captures the current sensor orientation as the center, so switching between `roll`, `pitch`, and `yaw` stays calibrated
+- `P` uses quaternion-derived twist around the sensor pitch axis for steering
+- `R` uses quaternion-derived twist around the sensor roll axis for debug comparison
+- `Y` uses quaternion-derived twist around the sensor yaw axis for debug comparison
+- `SPACE` captures the current sensor orientation as the center, so switching between the three twist axes stays calibrated
 - `A` / `D` or left / right arrows provide a keyboard steering fallback when packets are not arriving
 - `W` / up arrow and `S` / down arrow provide keyboard acceleration/brake fallback in button-throttle mode
-- the app displays the latest `roll`, `pitch`, `heading`, `button1`, and `button2` values from UDP packets
+- the app displays the latest quaternion values, derived Euler readout, `button1`, and `button2` values from UDP packets
 - the hardware test dashboard shows `button2` as a red lamp on the left and `button1` as a green lamp on the right
-- the app shows the host IPv4 address in the window so it is easy to copy into `wifi_secrets.h`
+- the app shows the host IPv4 address in the window so it is easy to confirm which machine is advertising itself on the LAN
 - the app keeps the last received value on screen even if packets go stale
+- if the game has not received controller packets for more than `5` seconds, it sends a small UDP broadcast beacon once per second on port `4211` so a booting controller can discover it
 
 ## Game Assets
 
@@ -146,10 +149,11 @@ The POC expects a system `raylib` package discoverable through `pkg-config`.
 
 1. Build and launch the `raylib` app.
 2. Confirm Road Carpet Drive loads by default.
-3. Fill in Wi-Fi credentials and host IP in `wifi_secrets.h`.
+3. Fill in Wi-Fi credentials in `wifi_secrets.h`.
 4. Upload the firmware.
-5. Confirm the car switches from keyboard fallback to live `UDP` steering input.
-6. Press `T` to verify the hardware test dashboard.
+5. Wait for the game to begin broadcasting discovery beacons if it has not heard from a controller for `5` seconds.
+6. Confirm the controller fast-flashes once it locks the server IP, then switches to live `UDP` steering input.
+7. Press `T` to verify the hardware test dashboard.
 
 ## Real-World Networking Notes
 

@@ -29,8 +29,8 @@ constexpr const char* kHeaderHelp =
     "T: game/test   A: drive mode   P/R/Y: axis   SPACE: center   ESC: quit";
 constexpr const char* kGameHelp = "T: hardware test   ESC: quit";
 #else
-constexpr int kWindowWidth = 1600;
-constexpr int kWindowHeight = 900;
+constexpr int kWindowWidth = 1024;
+constexpr int kWindowHeight = 768;
 constexpr bool kConsoleBuild = false;
 constexpr const char* kWindowTitle = "Steering Wheel Controller Game";
 constexpr const char* kHeaderTitle = "Toddler Steering Wheel Game";
@@ -56,8 +56,7 @@ inline void ApplyPostWindowInit() {
     return;
   }
 
-  SetWindowMinSize(960, 540);
-  MaximizeWindow();
+  SetWindowMinSize(1024, 768);
 }
 
 inline bool ShouldToggleFullscreen() {
@@ -124,6 +123,49 @@ struct UdpReceiver {
   }
 
   ~UdpReceiver() { Close(); }
+};
+
+struct UdpBroadcaster {
+  SocketHandle socket = kInvalidSocket;
+
+  bool Open() {
+    socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket == kInvalidSocket) {
+      Close();
+      return false;
+    }
+
+    const int enabled = 1;
+    if (setsockopt(socket, SOL_SOCKET, SO_BROADCAST, &enabled, sizeof(enabled)) < 0) {
+      Close();
+      return false;
+    }
+
+    return true;
+  }
+
+  bool SendBroadcast(const char* payload, int payloadLength, int port) {
+    if (socket == kInvalidSocket) {
+      return false;
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    address.sin_port = htons(static_cast<uint16_t>(port));
+
+    return sendto(socket, payload, static_cast<size_t>(payloadLength), 0,
+                  reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == payloadLength;
+  }
+
+  void Close() {
+    if (socket != kInvalidSocket) {
+      close(socket);
+      socket = kInvalidSocket;
+    }
+  }
+
+  ~UdpBroadcaster() { Close(); }
 };
 
 inline std::vector<std::string> GetLocalIpv4Addresses() {

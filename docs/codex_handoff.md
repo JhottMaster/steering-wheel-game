@@ -279,7 +279,7 @@ Important practical notes from the working setup:
 The external XIAO antenna must be attached or Wi-Fi signal can be unusably weak.
 The firmware uses a local untracked wifi_secrets.h file plus a tracked wifi_secrets.example.h template.
 The XIAO now advertises a friendlier hostname: steering-wheel-poc-esp32c3
-The Raylib app can display the host IPv4 address to make host IP setup easier.
+The Raylib app can display the host IPv4 address to make discovery/debugging easier.
 The Windows app can receive local UDP test packets from PowerShell.
 To get real XIAO-to-PC traffic working, both Windows firewall and router/VLAN UDP rules mattered.
 ```
