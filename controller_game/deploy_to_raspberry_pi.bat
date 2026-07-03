@@ -81,7 +81,7 @@ if errorlevel 1 (
 )
 
 echo Extracting files on Raspberry Pi...
-ssh "%REMOTE%" "cd '%PI_REMOTE_DIR%' && tar -xf controller_game_sync.tar && rm -f controller_game_sync.tar && find . -exec touch {} +"
+ssh "%REMOTE%" "cd '%PI_REMOTE_DIR%' && tar -xf controller_game_sync.tar && rm -f controller_game_sync.tar && find README.md DEVELOPMENT_GUIDELINES.md Makefile.raspberry_pi src assets tools -type f -exec touch {} +"
 if errorlevel 1 (
     echo Remote extract failed.
     del /f /q "%ARCHIVE%" >nul 2>nul
