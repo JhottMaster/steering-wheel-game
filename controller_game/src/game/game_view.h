@@ -113,11 +113,12 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, bool hasFr
                       game.driveMode == DriveMode::kAuto ? "auto" : "button", game.carSpeed),
            40, 104, 20, Color{232, 236, 224, 255});
 
-  DrawRectangle(rightPanelX, 20, rightPanelWidth, 118, Color{18, 28, 32, 185});
+  DrawRectangle(rightPanelX, 20, rightPanelWidth, 146, Color{18, 28, 32, 185});
   DrawText(platform::kGameHelp, rightTextX, 36, 22, Color{232, 236, 224, 255});
   DrawText("A: auto/button drive   SPACE: center", rightTextX, 66, 19,
            Color{195, 214, 204, 255});
   DrawText(hasFreshPackets ? "UDP controller active" : "keyboard fallback", rightTextX, 94, 19,
            hasFreshPackets ? Color{104, 230, 141, 255} : Color{246, 187, 87, 255});
-  DrawText(localIpText.c_str(), rightTextX, 116, 16, Color{176, 196, 186, 255});
+  DrawText(TextFormat("FPS: %d", GetFPS()), rightTextX, 116, 19, Color{255, 244, 205, 255});
+  DrawText(localIpText.c_str(), rightTextX, 140, 16, Color{176, 196, 186, 255});
 }

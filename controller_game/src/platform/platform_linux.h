@@ -43,9 +43,9 @@ using SocketHandle = int;
 constexpr SocketHandle kInvalidSocket = -1;
 
 inline unsigned int GetWindowConfigFlags() {
-  unsigned int flags = FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT;
+  unsigned int flags = FLAG_VSYNC_HINT;
   if (!kConsoleBuild) {
-    flags |= FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI;
+    flags |= FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT;
   }
   return flags;
 }

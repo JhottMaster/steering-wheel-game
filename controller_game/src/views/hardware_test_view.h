@@ -193,6 +193,8 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
   y += 34;
   DrawText(udpReady ? "Listener: ready" : "Listener: failed", rightX, y, 21,
            udpReady ? Color{59, 120, 87, 255} : Color{184, 72, 49, 255});
+  y += 34;
+  DrawText(TextFormat("FPS: %d", GetFPS()), rightX, y, 21, Color{46, 72, 88, 255});
   y += 46;
   DrawText("Host IPv4", rightX, y, 22, Color{77, 92, 103, 255});
   y += 30;
