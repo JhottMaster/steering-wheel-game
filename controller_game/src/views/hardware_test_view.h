@@ -10,6 +10,7 @@
 #include "../platform/platform_linux.h"
 #endif
 
+#include "../app/controller_buttons.h"
 #include "../game/game_logic.h"
 #include "raylib.h"
 
@@ -88,7 +89,8 @@ inline void DrawPanel(Rectangle bounds, Color fillColor) {
 
 inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displayAxis,
                              float sourceAngleDeg, float centeredAngleDeg,
-                             float steeringAngleDeg, float normalizedValue, bool hasFreshPackets,
+                             float steeringAngleDeg, float normalizedValue,
+                             const ControllerButtonState& buttons, bool hasFreshPackets,
                              bool hasAnyPacket, bool udpReady, const std::string& localIpText,
                              int screenWidth, int screenHeight) {
   ClearBackground(Color{242, 239, 228, 255});
@@ -125,11 +127,11 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
                                        135.0f, 270.0f);
   hardware_test_view_detail::DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
   hardware_test_view_detail::DrawButtonLamp(Vector2{center.x - wheelRadius * 1.34f, center.y},
-                                            wheelRadius * 0.16f, lastGoodFrame.button2Pressed,
+                                            wheelRadius * 0.16f, buttons.red,
                                             Color{92, 35, 34, 255},
                                             Color{237, 54, 43, 255}, "button 2");
   hardware_test_view_detail::DrawButtonLamp(Vector2{center.x + wheelRadius * 1.34f, center.y},
-                                            wheelRadius * 0.16f, lastGoodFrame.button1Pressed,
+                                            wheelRadius * 0.16f, buttons.green,
                                             Color{35, 84, 50, 255},
                                             Color{52, 222, 98, 255}, "button 1");
 
@@ -154,10 +156,10 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
   y += 56;
   DrawText("Buttons", leftX, y, 26, Color{46, 72, 88, 255});
   y += 44;
-  DrawText(TextFormat("green/right: %s", lastGoodFrame.button1Pressed ? "pressed" : "up"), leftX,
+  DrawText(TextFormat("green/right: %s", buttons.green ? "pressed" : "up"), leftX,
            y, 22, Color{46, 72, 88, 255});
   y += 34;
-  DrawText(TextFormat("red/left: %s", lastGoodFrame.button2Pressed ? "pressed" : "up"), leftX, y,
+  DrawText(TextFormat("red/left: %s", buttons.red ? "pressed" : "up"), leftX, y,
            22, Color{46, 72, 88, 255});
 
   const int rightX = static_cast<int>(rightPanel.x + 24.0f);
@@ -207,9 +209,9 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
   DrawText(TextFormat("euler yaw %.1f", QuaternionToYawDegrees(lastGoodFrame.orientation)),
            rightX, y, 20, Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("button1 %s", lastGoodFrame.button1Pressed ? "pressed" : "up"), rightX, y,
+  DrawText(TextFormat("button1 %s", buttons.green ? "pressed" : "up"), rightX, y,
            20, Color{46, 72, 88, 255});
   y += 28;
-  DrawText(TextFormat("button2 %s", lastGoodFrame.button2Pressed ? "pressed" : "up"), rightX, y,
+  DrawText(TextFormat("button2 %s", buttons.red ? "pressed" : "up"), rightX, y,
            20, Color{46, 72, 88, 255});
 }

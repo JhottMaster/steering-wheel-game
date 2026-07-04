@@ -420,8 +420,7 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
                      const RoadArtTuning& roadArtTuning,
                      const RoadArtEditorState& roadArtEditor,
                      bool hasFreshPackets, bool hasAnyPacket, bool isBroadcastingForLoss,
-                     const std::string& localIpText, int screenWidth, int screenHeight,
-                     float cameraZoomScale) {
+                     int screenWidth, int screenHeight, float cameraZoomScale) {
   ClearBackground(Color{60, 133, 126, 255});
 
   const bool hasCity = city.columns > 0 && city.rows > 0;
@@ -483,46 +482,16 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
   }
   EndMode2D();
 
-  const int leftPanelWidth = platform::kConsoleBuild ? 480 : 420;
-  const int rightPanelX = screenWidth - (platform::kConsoleBuild ? 500 : 430);
-  const int rightPanelWidth = platform::kConsoleBuild ? 476 : 410;
-  const int rightTextX = screenWidth - (platform::kConsoleBuild ? 476 : 408);
-
-  DrawRectangle(20, 20, leftPanelWidth, 122, Color{18, 28, 32, 185});
-  DrawText("Road Carpet Drive", 38, 36, 30, Color{255, 244, 205, 255});
+  DrawRectangle(20, 20, 258, 86, Color{18, 28, 32, 185});
   if (hasCity) {
-    DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(city.coins.size())), 40, 74,
-             22, Color{232, 236, 224, 255});
+    DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(city.coins.size())), 38, 36,
+             24, Color{255, 244, 205, 255});
   } else {
-    DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 40, 74,
-             22, Color{232, 236, 224, 255});
+    DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 38, 36,
+             24, Color{255, 244, 205, 255});
   }
-  if (hasCity) {
-    DrawText(TextFormat("drive: %s   %s   speed: %.0f",
-                        game.driveMode == DriveMode::kAuto ? "auto" : "button",
-                        game.onRoad ? "road" : "off road", game.carSpeed),
-             40, 104, 20,
-             game.onRoad ? Color{232, 236, 224, 255} : Color{246, 187, 87, 255});
-  } else {
-    DrawText(TextFormat("drive: %s   speed: %.0f",
-                        game.driveMode == DriveMode::kAuto ? "auto" : "button", game.carSpeed),
-             40, 104, 20, Color{232, 236, 224, 255});
-  }
-  if (hasCity && game.hitObstacle) {
-    DrawText("bonk", 250, 104, 20, Color{255, 180, 120, 255});
-  }
-
-  DrawRectangle(rightPanelX, 20, rightPanelWidth, 196, Color{18, 28, 32, 185});
-  DrawText(platform::kGameHelp, rightTextX, 36, 22, Color{232, 236, 224, 255});
-  DrawText("A: auto/button drive   SPACE: center", rightTextX, 66, 19,
-           Color{195, 214, 204, 255});
-  DrawText("-/=: zoom   0: reset zoom", rightTextX, 94, 19, Color{195, 214, 204, 255});
-  DrawText("E: editor   `/~: asset/field", rightTextX, 120, 19, Color{195, 214, 204, 255});
-  DrawText(hasFreshPackets ? "UDP controller active" : "keyboard fallback", rightTextX, 146, 19,
-           hasFreshPackets ? Color{104, 230, 141, 255} : Color{246, 187, 87, 255});
-  DrawText(TextFormat("FPS: %d   zoom: %.2fx", GetFPS(), cameraZoomScale), rightTextX, 168, 19,
-           Color{255, 244, 205, 255});
-  DrawText(localIpText.c_str(), rightTextX, 192, 16, Color{176, 196, 186, 255});
+  DrawText(TextFormat("speed: %.0f", std::fabs(game.carSpeed)), 38, 70, 22,
+           Color{232, 236, 224, 255});
 
   game_view_detail::DrawRoadArtEditorOverlay(roadArtTuning, roadArtEditor, screenWidth,
                                              screenHeight);

@@ -53,6 +53,10 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 - `Y`: use the sensor yaw-axis twist for debug comparison
 - `SPACE`: set the current sensor orientation as center
 - controller recenter gesture: hold green (`button1`) and press red (`button2`) `3` times within `1.5` seconds
+- controller pause gesture: hold green + red together for `3` seconds
+- pause menu: steer left/right to choose, green selects, red resumes/goes back
+- keyboard testing: up arrow also acts like green, down arrow also acts like red
+- pause menu options: resume, restart, center wheel, quit, toggle acceleration mode, hardware test/back to game, zoom out, and zoom in
 - left / right arrows: keyboard steering fallback input that automatically returns to center when released
 - up arrow: desktop accelerate input in button-throttle mode
 - down arrow: desktop brake/reverse input in button-throttle mode

@@ -11,6 +11,9 @@
 #include "platform/platform_linux.h"
 #endif
 
+#include "app/app_mode.h"
+#include "app/controller_buttons.h"
+#include "app/pause_menu.h"
 #include "game/game_audio.h"
 #include "game/game_logic.h"
 #include "game/game_view.h"
@@ -18,6 +21,7 @@
 #include "input/sensor_receiver.h"
 #include "raylib.h"
 #include "views/hardware_test_view.h"
+#include "views/pause_menu_view.h"
 
 namespace {
 constexpr int kUdpPort = 4210;
@@ -41,11 +45,6 @@ constexpr float kCameraZoomStep = 1.25f;
 constexpr float kRecenterGestureWindowSeconds = 1.5f;
 constexpr int kRecenterRedPressesRequired = 3;
 constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
-
-enum class AppMode {
-  kGame,
-  kHardwareTest,
-};
 
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
@@ -96,6 +95,22 @@ float ApplyGameSteeringResponseCurve(float wheelAngleDeg) {
       trailingFraction * (1.0f - kGameSteeringEarlyResponseFraction);
   return sign * normalized;
 }
+
+void ResetControllerCenter(const SensorFrame& lastGoodFrame, bool hasAnyPacket, SensorFrame* centerFrame,
+                           bool* hasCenterFrame, float* manualAngleDeg,
+                           float* gameAccumulatedAngleDeg, float* lastWrappedGameAngleDeg,
+                           bool* hasLastWrappedGameAngle) {
+  if (hasAnyPacket) {
+    *centerFrame = lastGoodFrame;
+    *hasCenterFrame = true;
+  } else {
+    *manualAngleDeg = 0.0f;
+    *hasCenterFrame = false;
+  }
+  *gameAccumulatedAngleDeg = 0.0f;
+  *lastWrappedGameAngleDeg = 0.0f;
+  *hasLastWrappedGameAngle = false;
+}
 }  // namespace
 
 int main() {
@@ -139,33 +154,39 @@ int main() {
   float lastWrappedGameAngleDeg = 0.0f;
   bool hasLastWrappedGameAngle = false;
   float cameraZoomScale = 1.0f;
+  PauseMenuState pauseMenu;
+  OpenPauseMenu(&pauseMenu);
+  bool shouldQuit = false;
 
-  while (!WindowShouldClose()) {
+  while (!shouldQuit && !WindowShouldClose()) {
     if (platform::ShouldToggleFullscreen()) {
       ToggleFullscreen();
     }
-    if (IsKeyPressed(KEY_T)) {
+    if (!pauseMenu.active && IsKeyPressed(KEY_T)) {
       appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
     }
-    if (appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
+    if (!pauseMenu.active && appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
       ToggleDriveMode(&game);
     }
-    if (appMode == AppMode::kGame && IsKeyPressed(KEY_E)) {
+    if (!pauseMenu.active && appMode == AppMode::kGame && IsKeyPressed(KEY_E)) {
       roadArtEditor.active = !roadArtEditor.active;
       if (!roadArtEditor.active) {
         SaveRoadArtTuning(roadArtTuningPath, roadArtTuning);
       }
     }
-    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT))) {
+    if (!pauseMenu.active && appMode == AppMode::kGame &&
+        (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT))) {
       cameraZoomScale = std::max(kCameraZoomMin, cameraZoomScale / kCameraZoomStep);
     }
-    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD))) {
+    if (!pauseMenu.active && appMode == AppMode::kGame &&
+        (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD))) {
       cameraZoomScale = std::min(kCameraZoomMax, cameraZoomScale * kCameraZoomStep);
     }
-    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0))) {
+    if (!pauseMenu.active && appMode == AppMode::kGame &&
+        (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0))) {
       cameraZoomScale = 1.0f;
     }
-    if (appMode == AppMode::kGame && roadArtEditor.active) {
+    if (!pauseMenu.active && appMode == AppMode::kGame && roadArtEditor.active) {
       if (IsKeyPressed(KEY_GRAVE)) {
         roadArtEditor.selectingAsset = !roadArtEditor.selectingAsset;
       }
@@ -197,13 +218,13 @@ int main() {
       }
     }
 
-    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
+    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
       displayAxis = DisplayAxis::kRoll;
     }
-    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_P)) {
+    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_P)) {
       displayAxis = DisplayAxis::kPitch;
     }
-    if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_Y)) {
+    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_Y)) {
       displayAxis = DisplayAxis::kYaw;
     }
 
@@ -280,30 +301,77 @@ int main() {
       lastBeaconTime = now;
     }
 
-    const bool greenButtonDown = hasFreshPackets && lastGoodFrame.button1Pressed;
-    const bool redButtonDown = hasFreshPackets && lastGoodFrame.button2Pressed;
+    const ControllerButtonState menuButtons =
+        ReadControllerButtons(lastGoodFrame, hasFreshPackets);
+    const bool pauseChordDown = menuButtons.green && menuButtons.red;
+    const float pauseMenuSteeringAngleDeg =
+        hasAnyPacket ? GetWrappedGameWheelAngleDeg(lastGoodFrame, centerFrame, hasCenterFrame) *
+                           kGameSteeringDirection
+                     : manualAngleDeg;
+    const PauseMenuAction pauseMenuAction =
+        UpdatePauseMenu(&pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
+                        menuButtons.red, dt);
 
-    if (greenButtonDown && !greenButtonGestureActive) {
+    switch (pauseMenuAction) {
+      case PauseMenuAction::kResume:
+        ClosePauseMenu(&pauseMenu);
+        break;
+      case PauseMenuAction::kRestart:
+        game = GameState{};
+        InitializeGameFromCity(&game, &city);
+        ClosePauseMenu(&pauseMenu);
+        break;
+      case PauseMenuAction::kCenter:
+        ResetControllerCenter(lastGoodFrame, hasAnyPacket, &centerFrame, &hasCenterFrame,
+                              &manualAngleDeg, &gameAccumulatedAngleDeg, &lastWrappedGameAngleDeg,
+                              &hasLastWrappedGameAngle);
+        break;
+      case PauseMenuAction::kQuit:
+        shouldQuit = true;
+        break;
+      case PauseMenuAction::kToggleDriveMode:
+        ToggleDriveMode(&game);
+        break;
+      case PauseMenuAction::kToggleHardwareTest:
+        appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
+        ClosePauseMenu(&pauseMenu);
+        break;
+      case PauseMenuAction::kZoomIn:
+        cameraZoomScale = std::min(kCameraZoomMax, cameraZoomScale * kCameraZoomStep);
+        break;
+      case PauseMenuAction::kZoomOut:
+        cameraZoomScale = std::max(kCameraZoomMin, cameraZoomScale / kCameraZoomStep);
+        break;
+      case PauseMenuAction::kNone:
+        break;
+    }
+
+    if (pauseChordDown) {
+      greenButtonGestureActive = false;
+      greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
+      redButtonPressCount = 0;
+      redButtonWasDown = menuButtons.red;
+    } else if (!pauseMenu.active && menuButtons.green && !greenButtonGestureActive) {
       greenButtonGestureActive = true;
       greenButtonGestureStartTime = now;
       redButtonPressCount = 0;
-      redButtonWasDown = redButtonDown;
+      redButtonWasDown = menuButtons.red;
       std::printf("Recenter gesture started. Hold green and press red %d times within %.1f seconds.\n",
                   kRecenterRedPressesRequired, kRecenterGestureWindowSeconds);
     }
 
-    if (greenButtonGestureActive) {
+    if (!pauseMenu.active && greenButtonGestureActive) {
       const float gestureElapsedSeconds =
           std::chrono::duration<float>(now - greenButtonGestureStartTime).count();
 
-      if (redButtonDown && !redButtonWasDown) {
+      if (menuButtons.red && !redButtonWasDown) {
         ++redButtonPressCount;
         std::printf("Recenter gesture red press %d/%d.\n", redButtonPressCount,
                     kRecenterRedPressesRequired);
       }
-      redButtonWasDown = redButtonDown;
+      redButtonWasDown = menuButtons.red;
 
-      if (!greenButtonDown) {
+      if (!menuButtons.green) {
         std::printf("Recenter gesture cancelled: green released.\n");
         greenButtonGestureActive = false;
         greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
@@ -329,19 +397,9 @@ int main() {
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
-      if (hasAnyPacket) {
-        centerFrame = lastGoodFrame;
-        hasCenterFrame = true;
-        gameAccumulatedAngleDeg = 0.0f;
-        lastWrappedGameAngleDeg = 0.0f;
-        hasLastWrappedGameAngle = false;
-      } else {
-        manualAngleDeg = 0.0f;
-        hasCenterFrame = false;
-        gameAccumulatedAngleDeg = 0.0f;
-        lastWrappedGameAngleDeg = 0.0f;
-        hasLastWrappedGameAngle = false;
-      }
+      ResetControllerCenter(lastGoodFrame, hasAnyPacket, &centerFrame, &hasCenterFrame,
+                            &manualAngleDeg, &gameAccumulatedAngleDeg, &lastWrappedGameAngleDeg,
+                            &hasLastWrappedGameAngle);
       greenButtonGestureActive = false;
       greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
       redButtonPressCount = 0;
@@ -360,16 +418,16 @@ int main() {
     const float gameSourceAngleDeg = hasAnyPacket ? gameAccumulatedAngleDeg : manualAngleDeg;
     const float gameSteeringInput =
         ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
+    const ControllerButtonState gameInputButtons =
+        ReadControllerButtons(lastGoodFrame, hasFreshPackets, !roadArtEditorConsumesArrows);
     const GameButtons gameButtons = {
-        (hasFreshPackets && lastGoodFrame.button1Pressed) ||
-            (!roadArtEditorConsumesArrows && IsKeyDown(KEY_UP)),
-        (hasFreshPackets && lastGoodFrame.button2Pressed) ||
-            (!roadArtEditorConsumesArrows && IsKeyDown(KEY_DOWN)),
+        gameInputButtons.green,
+        gameInputButtons.red,
     };
-    if (appMode == AppMode::kGame) {
+    if (appMode == AppMode::kGame && !pauseMenu.active) {
       UpdateGame(&game, gameSteeringInput, gameButtons, dt, &city);
     }
-    UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame);
+    UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame && !pauseMenu.active);
 
     const int screenWidth = GetScreenWidth();
     const int screenHeight = GetScreenHeight();
@@ -377,15 +435,22 @@ int main() {
     BeginDrawing();
     if (appMode == AppMode::kGame) {
       DrawGame(game, gameAssets, city, roadArtTuning, roadArtEditor, hasFreshPackets,
-               hasAnyPacket, wasBroadcastingForLoss, localIpText, screenWidth, screenHeight,
-               cameraZoomScale);
+               hasAnyPacket, wasBroadcastingForLoss, screenWidth, screenHeight, cameraZoomScale);
+      if (pauseMenu.active) {
+        DrawPauseMenu(pauseMenu, game, appMode, localIpText, cameraZoomScale, screenWidth,
+                      screenHeight);
+      }
       EndDrawing();
       continue;
     }
 
     DrawHardwareTest(lastGoodFrame, displayAxis, sourceAngleDeg, centeredAngleDeg,
-                     steeringAngleDeg, normalizedValue, hasFreshPackets, hasAnyPacket, udpReady,
-                     localIpText, screenWidth, screenHeight);
+                     steeringAngleDeg, normalizedValue, menuButtons, hasFreshPackets,
+                     hasAnyPacket, udpReady, localIpText, screenWidth, screenHeight);
+    if (pauseMenu.active) {
+      DrawPauseMenu(pauseMenu, game, appMode, localIpText, cameraZoomScale, screenWidth,
+                    screenHeight);
+    }
 
     EndDrawing();
   }

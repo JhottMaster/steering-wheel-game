@@ -58,7 +58,7 @@ set "ARCHIVE=%TEMP%\controller_game_pi_sync.tar"
 if exist "%ARCHIVE%" del /f /q "%ARCHIVE%"
 
 echo Packaging controller_game for Raspberry Pi...
-tar -cf "%ARCHIVE%" README.md DEVELOPMENT_GUIDELINES.md Makefile.raspberry_pi src/main.cpp src/game src/input src/views src/platform/platform_linux.h assets tools
+tar -cf "%ARCHIVE%" README.md DEVELOPMENT_GUIDELINES.md Makefile.raspberry_pi src/main.cpp src/app src/game src/input src/views src/platform/platform_linux.h assets tools
 if errorlevel 1 (
     echo Failed to create upload archive.
     exit /b 1
