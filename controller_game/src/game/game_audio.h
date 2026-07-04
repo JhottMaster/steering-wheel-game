@@ -39,6 +39,17 @@ inline std::string FindAssetPath(const char* folder, const char* filename) {
 inline std::string FindSoundPath(const char* filename) {
   return FindAssetPath("assets/sounds", filename);
 }
+
+inline std::string FindFirstSoundPath(std::initializer_list<const char*> filenames) {
+  for (const char* filename : filenames) {
+    const std::string candidate = FindSoundPath(filename);
+    if (FileExists(candidate.c_str())) {
+      return candidate;
+    }
+  }
+
+  return FindSoundPath(*filenames.begin());
+}
 }  // namespace game_audio_detail
 
 inline GameAudio LoadGameAudio() {
@@ -51,7 +62,8 @@ inline GameAudio LoadGameAudio() {
   audio.background =
       LoadMusicStream(game_audio_detail::FindSoundPath("carpet_cruise_loop.wav").c_str());
   audio.backgroundLoaded = audio.background.stream.buffer != nullptr;
-  audio.engine = LoadMusicStream(game_audio_detail::FindSoundPath("toy_engine_loop.wav").c_str());
+  audio.engine = LoadMusicStream(
+      game_audio_detail::FindFirstSoundPath({"engine_large.ogg", "toy_engine_loop.wav"}).c_str());
   audio.engineLoaded = audio.engine.stream.buffer != nullptr;
   audio.coin = LoadSound(game_audio_detail::FindSoundPath("coin_chime.wav").c_str());
   audio.coinLoaded = audio.coin.stream.buffer != nullptr;
