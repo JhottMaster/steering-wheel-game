@@ -5,6 +5,7 @@ Shared `raylib` game code for both the Windows desktop dev loop and the Raspberr
 `src/main.cpp` owns the app setup and frame loop so it remains a useful starting point. Most modules keep their implementation in the header to make browsing the game easier. The rest of `src/` is organized by responsibility:
 
 - `src/game/`: Road Carpet Drive logic, assets, audio, and game rendering
+- `src/app/`: shared app-level state such as app mode, logical controller buttons, and pause menu behavior
 - `src/input/`: shared controller packet polling and packet-to-`SensorFrame` parsing behavior
 - `src/views/`: secondary screens such as the hardware test dashboard
 - `src/platform/`: Windows and Linux/Raspberry Pi networking, local IP lookup, and window defaults
@@ -28,18 +29,23 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 - while rediscovering, the game sends a discovery beacon every `3` seconds and shows a disconnected banner in the game view
 
 - defaults to the Road Carpet Drive game
+- starts paused so a controller-only Raspberry Pi boot lands on a usable menu before gameplay begins
 - press `T` to show the hardware test dashboard
 - drives a toy car around a spreadsheet-authored toy-carpet city map
 - uses generated sprites from `assets/sprites`
 - draws roads, buildings, trees, bushes, coins, and spawn markers from `assets/cities/demo_city.csv`
+- the current demo city has `32` collectible coins and `34` building props
 - uses the CSV city data for spawn position, coin pickup, road/off-road behavior, and obstacle collision
 - starts in button-throttle mode by default, with the car stopped until you accelerate
 - gives button-throttle mode a higher top speed than auto-drive
 - kicks up fading dust puffs and clamps speed harder when the car leaves the road
+- adds animated kraken road encounters that wobble, growl when approached, and sink away when collected
 - renders a steering wheel from quaternion-derived twist around the selected sensor axis
 - displays the latest quaternion, derived Euler readout, and two button states from the controller
 - shows `button2` as the red left lamp and `button1` as the green right lamp in test mode
 - falls back to keyboard input if no recent packets arrive
+- keeps the in-game HUD minimal: coins and speed stay visible, while diagnostics such as IP, FPS, and zoom live in the pause menu
+- logs lightweight frame timing diagnostics to the terminal every `2` seconds while running
 - desktop builds now default to a `1024x768` window to match the Raspberry Pi target layout more closely
 
 ## Controls
@@ -106,18 +112,24 @@ Fixed sprite filenames are used so the art can be replaced later without changin
 - `road_curve_top_right.png`
 - `road_curve_top_left.png`
 - `coin_star.png`
-- `sports_car_top.png`
+- `kraken_octopus_pop_sheet.png`
+- `kraken_octopus_road_sheet.png`
+- `toy_sports_car.png`
+- `toy_car_tire.png`
 - building sprites such as `building_house.png`, `building_shop.png`, and `building_fire_station.png`
 - prop sprites such as `prop_bush_cluster.png`, `prop_evergreen.png`, and `prop_tree_round_ai_01.png`
 
 Road curve filenames should match their semantic direction. For example, `road_curve_bottom_left.png`
 is the art used by `CitySprite::kRoadCurveBottomLeft` and the `r_bl` city token.
 
-Sound assets are also generated original files:
+Sound assets include:
 
 - `carpet_cruise_loop.wav`
-- `toy_engine_loop.wav`
+- `engine_large.ogg`, falling back to `toy_engine_loop.wav`
 - `coin_chime.wav`
+- `silent_beast_growl.mp3`: plays when an uncollected kraken first comes near the car
+- `splash1.wav`: plays when a kraken is collected and sinks away
+- optional fallback names `kraken_growl.wav` and `kraken_sink.wav` are also supported
 
 To regenerate the current original art and sounds:
 
@@ -162,6 +174,8 @@ Current road tokens:
 Current object tokens:
 
 - `coin:star`
+- `kraken:pop`
+- `kraken:road`
 - `spawn:player`
 - `tree:round`
 - `tree:evergreen`
@@ -177,6 +191,8 @@ The parser for this format is in `src/game/city_map.h`. The same parsed city dat
 
 - road tokens create drivable road shapes
 - coin tokens create collectible coins
+- kraken tokens create animated road encounters that pop/fade away when the car drives through them
+- the HUD shows collected krakens separately from coins
 - `spawn:player` sets the starting car position
 - trees, bushes, and buildings create approximate obstacle collision shapes
 

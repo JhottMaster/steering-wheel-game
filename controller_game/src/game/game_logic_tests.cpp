@@ -101,6 +101,24 @@ void TestCitySpawnAndCoinCollection() {
   assert(game.score == 1);
 }
 
+void TestCityKrakenCollection() {
+  CityMap city;
+  city.columns = 4;
+  city.rows = 4;
+  city.hasPlayerSpawn = true;
+  city.playerSpawnX = 300.0f;
+  city.playerSpawnY = 400.0f;
+  city.krakens.push_back(CityKraken{CityKrakenKind::kRoad, 300.0f, 400.0f, 180.0f, false, 0.0f});
+
+  GameState game;
+  InitializeGameFromCity(&game, &city);
+  UpdateGame(&game, 0.0f, {}, 0.01f, &city);
+  assert(city.krakens[0].collected);
+  assert(city.krakens[0].collectAnimationSeconds > 0.0f);
+  assert(game.krakensCollected == 1);
+  assert(game.score == 0);
+}
+
 void TestCityRoadDetection() {
   CityMap city;
   city.columns = 2;
@@ -205,6 +223,7 @@ int main() {
   TestDriveModeToggle();
   TestCoinCollection();
   TestCitySpawnAndCoinCollection();
+  TestCityKrakenCollection();
   TestCityRoadDetection();
   TestCityObstaclePushesCar();
   TestCityObstacleDoesNotBounceWhenEscaping();

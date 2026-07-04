@@ -28,6 +28,8 @@ struct GameAssets {
   Texture2D buildingPolice = {};
   Texture2D buildingFireStation = {};
   Texture2D buildingLibrary = {};
+  Texture2D krakenPop = {};
+  Texture2D krakenRoad = {};
 };
 
 inline bool TextureLoaded(Texture2D texture) {
@@ -98,6 +100,8 @@ inline GameAssets LoadGameAssets() {
   assets.buildingPolice = game_assets_detail::LoadSpriteTexture("building_police_station_ai_01.png");
   assets.buildingFireStation = game_assets_detail::LoadSpriteTexture("building_fire_station.png");
   assets.buildingLibrary = game_assets_detail::LoadSpriteTexture("building_library.png");
+  assets.krakenPop = game_assets_detail::LoadSpriteTexture("kraken_octopus_pop_sheet.png");
+  assets.krakenRoad = game_assets_detail::LoadSpriteTexture("kraken_octopus_road_sheet.png");
   return assets;
 }
 
@@ -137,6 +141,10 @@ inline Texture2D GetCityTexture(const GameAssets& assets, CitySprite sprite) {
       return assets.buildingFireStation;
     case CitySprite::kBuildingLibrary:
       return assets.buildingLibrary;
+    case CitySprite::kKrakenPop:
+      return assets.krakenPop;
+    case CitySprite::kKrakenRoad:
+      return assets.krakenRoad;
   }
 
   return {};
@@ -171,4 +179,6 @@ inline void UnloadGameAssets(GameAssets* assets) {
   UnloadIfLoaded(&assets->buildingPolice);
   UnloadIfLoaded(&assets->buildingFireStation);
   UnloadIfLoaded(&assets->buildingLibrary);
+  UnloadIfLoaded(&assets->krakenPop);
+  UnloadIfLoaded(&assets->krakenRoad);
 }

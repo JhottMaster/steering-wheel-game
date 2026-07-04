@@ -45,6 +45,78 @@ constexpr float kCameraZoomStep = 1.25f;
 constexpr float kRecenterGestureWindowSeconds = 1.5f;
 constexpr int kRecenterRedPressesRequired = 3;
 constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
+constexpr double kPerformanceLogIntervalSeconds = 2.0;
+
+using PerfClock = std::chrono::steady_clock;
+
+struct PerfBucket {
+  double totalMs = 0.0;
+  double maxMs = 0.0;
+
+  void Add(double milliseconds) {
+    totalMs += milliseconds;
+    maxMs = std::max(maxMs, milliseconds);
+  }
+
+  double Average(int sampleCount) const {
+    return sampleCount > 0 ? totalMs / static_cast<double>(sampleCount) : 0.0;
+  }
+};
+
+struct PerformanceWindow {
+  PerfBucket frameCpu;
+  PerfBucket dt;
+  PerfBucket input;
+  PerfBucket update;
+  PerfBucket audio;
+  PerfBucket draw;
+  int frames = 0;
+  PerfClock::time_point startedAt = PerfClock::now();
+};
+
+double ElapsedMilliseconds(PerfClock::time_point start, PerfClock::time_point end) {
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+void AddPerformanceSample(PerformanceWindow* performance, double frameCpuMs, double dtMs,
+                          double inputMs, double updateMs, double audioMs, double drawMs) {
+  performance->frameCpu.Add(frameCpuMs);
+  performance->dt.Add(dtMs);
+  performance->input.Add(inputMs);
+  performance->update.Add(updateMs);
+  performance->audio.Add(audioMs);
+  performance->draw.Add(drawMs);
+  ++performance->frames;
+}
+
+void MaybeLogPerformance(PerformanceWindow* performance, AppMode appMode, bool pauseMenuActive) {
+  const auto now = PerfClock::now();
+  const double elapsedSeconds =
+      std::chrono::duration<double>(now - performance->startedAt).count();
+  if (elapsedSeconds < kPerformanceLogIntervalSeconds || performance->frames <= 0) {
+    return;
+  }
+
+  const double averageFrameCpuMs = performance->frameCpu.Average(performance->frames);
+  const double averageDtMs = performance->dt.Average(performance->frames);
+  const double averageInputMs = performance->input.Average(performance->frames);
+  const double averageUpdateMs = performance->update.Average(performance->frames);
+  const double averageAudioMs = performance->audio.Average(performance->frames);
+  const double averageDrawMs = performance->draw.Average(performance->frames);
+  const double averageOtherMs =
+      std::max(0.0, averageFrameCpuMs -
+                        (averageInputMs + averageUpdateMs + averageAudioMs + averageDrawMs));
+
+  std::printf(
+      "[perf] mode=%s pause=%s frames=%d dt(avg/max)=%.2f/%.2f ms cpu(avg/max)=%.2f/%.2f ms "
+      "input=%.2f update=%.2f audio=%.2f draw=%.2f other=%.2f\n",
+      appMode == AppMode::kGame ? "game" : "hardware", pauseMenuActive ? "yes" : "no",
+      performance->frames, averageDtMs, performance->dt.maxMs, averageFrameCpuMs,
+      performance->frameCpu.maxMs, averageInputMs, averageUpdateMs, averageAudioMs,
+      averageDrawMs, averageOtherMs);
+
+  *performance = PerformanceWindow{};
+}
 
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
@@ -157,8 +229,11 @@ int main() {
   PauseMenuState pauseMenu;
   OpenPauseMenu(&pauseMenu);
   bool shouldQuit = false;
+  PerformanceWindow performance;
 
   while (!shouldQuit && !WindowShouldClose()) {
+    const auto frameStartTime = PerfClock::now();
+    auto inputStartTime = frameStartTime;
     if (platform::ShouldToggleFullscreen()) {
       ToggleFullscreen();
     }
@@ -250,6 +325,7 @@ int main() {
     }
 
     const float dt = GetFrameTime();
+    const auto inputEndTime = PerfClock::now();
     const auto now = std::chrono::steady_clock::now();
     const float secondsSincePacket = std::chrono::duration<float>(now - lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
@@ -424,14 +500,19 @@ int main() {
         gameInputButtons.green,
         gameInputButtons.red,
     };
+    const auto updateStartTime = PerfClock::now();
     if (appMode == AppMode::kGame && !pauseMenu.active) {
       UpdateGame(&game, gameSteeringInput, gameButtons, dt, &city);
     }
+    const auto updateEndTime = PerfClock::now();
+    const auto audioStartTime = updateEndTime;
     UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame && !pauseMenu.active);
+    const auto audioEndTime = PerfClock::now();
 
     const int screenWidth = GetScreenWidth();
     const int screenHeight = GetScreenHeight();
 
+    const auto drawStartTime = PerfClock::now();
     BeginDrawing();
     if (appMode == AppMode::kGame) {
       DrawGame(game, gameAssets, city, roadArtTuning, roadArtEditor, hasFreshPackets,
@@ -441,6 +522,14 @@ int main() {
                       screenHeight);
       }
       EndDrawing();
+      const auto frameEndTime = PerfClock::now();
+      AddPerformanceSample(
+          &performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
+          static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
+          ElapsedMilliseconds(updateStartTime, updateEndTime),
+          ElapsedMilliseconds(audioStartTime, audioEndTime),
+          ElapsedMilliseconds(drawStartTime, frameEndTime));
+      MaybeLogPerformance(&performance, appMode, pauseMenu.active);
       continue;
     }
 
@@ -453,6 +542,14 @@ int main() {
     }
 
     EndDrawing();
+    const auto frameEndTime = PerfClock::now();
+    AddPerformanceSample(
+        &performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
+        static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
+        ElapsedMilliseconds(updateStartTime, updateEndTime),
+        ElapsedMilliseconds(audioStartTime, audioEndTime),
+        ElapsedMilliseconds(drawStartTime, frameEndTime));
+    MaybeLogPerformance(&performance, appMode, pauseMenu.active);
   }
 
   UnloadGameAudio(&gameAudio);

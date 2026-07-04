@@ -94,6 +94,10 @@ inline bool IsRoadSprite(CitySprite sprite) {
          sprite == CitySprite::kRoadIntersection || IsRoadCurveSprite(sprite);
 }
 
+inline Texture2D GetKrakenTexture(const GameAssets& assets, CityKrakenKind kind) {
+  return kind == CityKrakenKind::kRoad ? assets.krakenRoad : assets.krakenPop;
+}
+
 inline Vector2 RotateVector(Vector2 value, float angleDeg) {
   const float radians = angleDeg * kDegToRad;
   const float cosAngle = std::cos(radians);
@@ -254,6 +258,53 @@ inline void DrawCityCoins(const GameAssets& assets, const CityMap& city) {
     } else {
       DrawCircleV(Vector2{coin.x, coin.y + yOffset}, coinSize * 0.38f,
                   Color{255, 203, 64, alpha});
+    }
+  }
+}
+
+inline void DrawCityKrakens(const GameAssets& assets, const CityMap& city) {
+  constexpr int frameCount = 4;
+  constexpr float secondsPerFrame = 0.5f;
+  const int idleFrame = static_cast<int>(GetTime() / secondsPerFrame) % frameCount;
+  for (const CityKraken& kraken : city.krakens) {
+    if (kraken.collected &&
+        kraken.collectAnimationSeconds >= kGameKrakenCollectAnimationSeconds) {
+      continue;
+    }
+
+    const bool animating = kraken.collected;
+    const float progress =
+        animating
+            ? std::clamp(kraken.collectAnimationSeconds / kGameKrakenCollectAnimationSeconds, 0.0f,
+                         1.0f)
+            : 0.0f;
+    const float pop = animating ? std::sin(progress * 3.14159265358979323846f) : 0.0f;
+    const float drawSize = kraken.size * (animating ? 1.0f + pop * 0.24f : 1.0f);
+    const float yOffset = animating ? -36.0f * pop : 0.0f;
+    const float idlePhase = static_cast<float>(GetTime()) * 2.2f + kraken.x * 0.013f + kraken.y * 0.007f;
+    const float idleWobble = animating ? 0.0f : std::sin(idlePhase);
+    const float idleRotationDeg = idleWobble * 5.0f;
+    const float idleStretchY = animating ? 1.0f : 1.0f + idleWobble * 0.05f;
+    const int frame = animating
+                          ? std::min(frameCount - 1,
+                                     static_cast<int>(progress * static_cast<float>(frameCount)))
+                          : idleFrame;
+    const unsigned char alpha =
+        animating ? static_cast<unsigned char>(std::clamp((1.0f - progress) * 255.0f, 0.0f, 255.0f))
+                  : 255;
+    const Texture2D texture = GetKrakenTexture(assets, kraken.kind);
+    const Color tint = Color{255, 255, 255, alpha};
+    if (TextureLoaded(texture)) {
+      const float frameWidth = static_cast<float>(texture.width) / frameCount;
+      const Rectangle source = {frameWidth * frame, 0.0f, frameWidth,
+                                static_cast<float>(texture.height)};
+      const Rectangle destination = {kraken.x, kraken.y + yOffset, drawSize,
+                                     drawSize * idleStretchY};
+      DrawTexturePro(texture, source, destination, Vector2{drawSize * 0.5f, drawSize * 0.5f},
+                     idleRotationDeg, tint);
+    } else {
+      DrawCircleV(Vector2{kraken.x, kraken.y + yOffset}, drawSize * 0.34f,
+                  Color{230, 84, 49, alpha});
     }
   }
 }
@@ -433,6 +484,7 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
     game_view_detail::DrawCityTerrain(assets, city);
     game_view_detail::DrawCityVisuals(assets, city, roadArtTuning);
     game_view_detail::DrawCityCoins(assets, city);
+    game_view_detail::DrawCityKrakens(assets, city);
     if (roadArtEditor.active) {
       game_view_detail::DrawCityCollisionDebug(city, game);
     }
@@ -482,15 +534,18 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
   }
   EndMode2D();
 
-  DrawRectangle(20, 20, 258, 86, Color{18, 28, 32, 185});
+  DrawRectangle(20, 20, 258, hasCity ? 116 : 86, Color{18, 28, 32, 185});
   if (hasCity) {
     DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(city.coins.size())), 38, 36,
              24, Color{255, 244, 205, 255});
+    DrawText(TextFormat("krakens: %d / %d", game.krakensCollected,
+                        static_cast<int>(city.krakens.size())),
+             38, 68, 22, Color{255, 207, 180, 255});
   } else {
     DrawText(TextFormat("coins: %d / %d", game.score, static_cast<int>(game.coins.size())), 38, 36,
              24, Color{255, 244, 205, 255});
   }
-  DrawText(TextFormat("speed: %.0f", std::fabs(game.carSpeed)), 38, 70, 22,
+  DrawText(TextFormat("speed: %.0f", std::fabs(game.carSpeed)), 38, hasCity ? 98 : 70, 22,
            Color{232, 236, 224, 255});
 
   game_view_detail::DrawRoadArtEditorOverlay(roadArtTuning, roadArtEditor, screenWidth,

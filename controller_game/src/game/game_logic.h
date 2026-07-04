@@ -29,6 +29,9 @@ constexpr float kGameMaxTurnRateDegPerSecond = 155.0f;
 constexpr float kGameMaxVisualWheelTurnDeg = 45.0f;
 constexpr float kGameCoinPickupRadius = 58.0f;
 constexpr float kGameCoinCollectAnimationSeconds = 0.42f;
+constexpr float kGameKrakenPickupRadius = 86.0f;
+constexpr float kGameKrakenGrowlRadius = 430.0f;
+constexpr float kGameKrakenCollectAnimationSeconds = 0.58f;
 constexpr float kGameDegToRad = 0.017453292519943295769f;
 constexpr float kGameRadToDeg = 57.295779513082320876f;
 constexpr float kCityRoadHalfWidth = kCityTileSize * 0.25f;
@@ -106,6 +109,8 @@ struct GameState {
   int dustSpawnCounter = 0;
   DriveMode driveMode = DriveMode::kManual;
   int score = 0;
+  int krakensCollected = 0;
+  bool krakenNearby = false;
   bool onRoad = true;
   bool hitObstacle = false;
   std::array<DustParticle, 18> dustParticles = {};
@@ -142,6 +147,8 @@ inline void InitializeGameFromCity(GameState* game, CityMap* city) {
     game->carPosition = GameVec2{city->playerSpawnX, city->playerSpawnY};
   }
   game->score = 0;
+  game->krakensCollected = 0;
+  game->krakenNearby = false;
   game->onRoad = true;
   game->hitObstacle = false;
   game->carSpeed = game->driveMode == DriveMode::kAuto ? kGameAutoSpeed : 0.0f;
@@ -154,6 +161,10 @@ inline void InitializeGameFromCity(GameState* game, CityMap* city) {
   for (CityCoin& coin : city->coins) {
     coin.collected = false;
     coin.collectAnimationSeconds = 0.0f;
+  }
+  for (CityKraken& kraken : city->krakens) {
+    kraken.collected = false;
+    kraken.collectAnimationSeconds = 0.0f;
   }
 }
 
@@ -422,6 +433,37 @@ inline void UpdateCityCoinAnimations(CityMap* city, float dt) {
   }
 }
 
+inline void UpdateCityKrakenState(GameState* game, CityMap* city) {
+  const float pickupDistanceSq = kGameKrakenPickupRadius * kGameKrakenPickupRadius;
+  const float growlDistanceSq = kGameKrakenGrowlRadius * kGameKrakenGrowlRadius;
+  game->krakensCollected = 0;
+  game->krakenNearby = false;
+  for (CityKraken& kraken : city->krakens) {
+    const float distanceSq =
+        DistanceSquared(game->carPosition.x, game->carPosition.y, kraken.x, kraken.y);
+    if (!kraken.collected &&
+        distanceSq <= pickupDistanceSq) {
+      kraken.collected = true;
+      kraken.collectAnimationSeconds = 0.0f;
+    }
+    if (kraken.collected) {
+      ++game->krakensCollected;
+    } else if (distanceSq <= growlDistanceSq) {
+      game->krakenNearby = true;
+    }
+  }
+}
+
+inline void UpdateCityKrakenAnimations(CityMap* city, float dt) {
+  for (CityKraken& kraken : city->krakens) {
+    if (kraken.collected &&
+        kraken.collectAnimationSeconds < kGameKrakenCollectAnimationSeconds) {
+      kraken.collectAnimationSeconds =
+          std::min(kGameKrakenCollectAnimationSeconds, kraken.collectAnimationSeconds + dt);
+    }
+  }
+}
+
 inline bool ResolveCircleVsCircle(float* x, float* y, float carRadius,
                                   const CityObstacle& obstacle) {
   const float obstacleRadius = obstacle.width * 0.5f;
@@ -670,7 +712,9 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
     }
     game->onRoad = IsCarOnCityRoad(*city, *game);
     CollectNearbyCityCoins(game, city);
+    UpdateCityKrakenState(game, city);
     UpdateCityCoinAnimations(city, dt);
+    UpdateCityKrakenAnimations(city, dt);
   } else {
     game->carPosition.x =
         std::clamp(game->carPosition.x, kGameCarMargin, kGameMapSize - kGameCarMargin);
@@ -678,5 +722,7 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
         std::clamp(game->carPosition.y, kGameCarMargin, kGameMapSize - kGameCarMargin);
     game->hitObstacle = false;
     CollectNearbyCoins(game);
+    game->krakensCollected = 0;
+    game->krakenNearby = false;
   }
 }

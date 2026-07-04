@@ -30,6 +30,13 @@ enum class CitySprite {
   kBuildingPolice,
   kBuildingFireStation,
   kBuildingLibrary,
+  kKrakenPop,
+  kKrakenRoad,
+};
+
+enum class CityKrakenKind {
+  kPop,
+  kRoad,
 };
 
 enum class CityRoadKind {
@@ -64,6 +71,15 @@ struct CityCoin {
   float collectAnimationSeconds = 0.0f;
 };
 
+struct CityKraken {
+  CityKrakenKind kind = CityKrakenKind::kPop;
+  float x = 0.0f;
+  float y = 0.0f;
+  float size = kCityTileSize;
+  bool collected = false;
+  float collectAnimationSeconds = 0.0f;
+};
+
 struct CityObstacle {
   float x = 0.0f;
   float y = 0.0f;
@@ -81,6 +97,7 @@ struct CityMap {
   std::vector<CityVisual> visuals;
   std::vector<CityRoadTile> roads;
   std::vector<CityCoin> coins;
+  std::vector<CityKraken> krakens;
   std::vector<CityObstacle> obstacles;
 };
 
@@ -215,6 +232,14 @@ inline bool TryAddObject(const std::string& token, int column, int row, CityMap*
   const float centerY = row * kCityTileSize + city_map_detail::AuthoringToWorld(offsetY);
   if (name == "coin:star") {
     city->coins.push_back(CityCoin{centerX, centerY, false, 0.0f});
+    return true;
+  } else if (name == "kraken:pop") {
+    city->krakens.push_back(CityKraken{CityKrakenKind::kPop, centerX, centerY,
+                                       340.0f * scale * kCityAuthoringToWorldScale, false, 0.0f});
+    return true;
+  } else if (name == "kraken:road") {
+    city->krakens.push_back(CityKraken{CityKrakenKind::kRoad, centerX, centerY,
+                                       380.0f * scale * kCityAuthoringToWorldScale, false, 0.0f});
     return true;
   } else if (name == "tree:round") {
     sprite = CitySprite::kTreeRound;

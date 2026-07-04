@@ -11,11 +11,17 @@ struct GameAudio {
   Music background = {};
   Music engine = {};
   Sound coin = {};
+  Sound krakenGrowl = {};
+  Sound krakenSink = {};
   bool ready = false;
   bool backgroundLoaded = false;
   bool engineLoaded = false;
   bool coinLoaded = false;
+  bool krakenGrowlLoaded = false;
+  bool krakenSinkLoaded = false;
   int lastScore = 0;
+  int lastKrakensCollected = 0;
+  bool krakenWasNearby = false;
 };
 
 namespace game_audio_detail {
@@ -50,6 +56,18 @@ inline std::string FindFirstSoundPath(std::initializer_list<const char*> filenam
 
   return FindSoundPath(*filenames.begin());
 }
+
+inline Sound LoadOptionalSound(std::initializer_list<const char*> filenames, bool* loaded) {
+  const std::string path = FindFirstSoundPath(filenames);
+  if (!FileExists(path.c_str())) {
+    *loaded = false;
+    return {};
+  }
+
+  Sound sound = LoadSound(path.c_str());
+  *loaded = sound.stream.buffer != nullptr;
+  return sound;
+}
 }  // namespace game_audio_detail
 
 inline GameAudio LoadGameAudio() {
@@ -67,6 +85,10 @@ inline GameAudio LoadGameAudio() {
   audio.engineLoaded = audio.engine.stream.buffer != nullptr;
   audio.coin = LoadSound(game_audio_detail::FindSoundPath("coin_chime.wav").c_str());
   audio.coinLoaded = audio.coin.stream.buffer != nullptr;
+  audio.krakenGrowl = game_audio_detail::LoadOptionalSound(
+      {"silent_beast_growl.mp3", "kraken_growl.wav"}, &audio.krakenGrowlLoaded);
+  audio.krakenSink = game_audio_detail::LoadOptionalSound(
+      {"splash1.wav", "kraken_sink.wav"}, &audio.krakenSinkLoaded);
 
   if (audio.backgroundLoaded) {
     audio.background.looping = true;
@@ -81,6 +103,12 @@ inline GameAudio LoadGameAudio() {
   if (audio.coinLoaded) {
     SetSoundVolume(audio.coin, 0.72f);
   }
+  if (audio.krakenGrowlLoaded) {
+    SetSoundVolume(audio.krakenGrowl, 0.46f);
+  }
+  if (audio.krakenSinkLoaded) {
+    SetSoundVolume(audio.krakenSink, 0.58f);
+  }
 
   return audio;
 }
@@ -94,6 +122,12 @@ inline void UnloadGameAudio(GameAudio* audio) {
   }
   if (audio->coinLoaded) {
     UnloadSound(audio->coin);
+  }
+  if (audio->krakenGrowlLoaded) {
+    UnloadSound(audio->krakenGrowl);
+  }
+  if (audio->krakenSinkLoaded) {
+    UnloadSound(audio->krakenSink);
   }
 }
 
@@ -119,4 +153,15 @@ inline void UpdateGameAudio(GameAudio* audio, const GameState& game, bool gameMo
     PlaySound(audio->coin);
   }
   audio->lastScore = game.score;
+
+  if (gameModeActive && audio->krakenGrowlLoaded && game.krakenNearby &&
+      !audio->krakenWasNearby) {
+    PlaySound(audio->krakenGrowl);
+  }
+  audio->krakenWasNearby = gameModeActive && game.krakenNearby;
+
+  if (audio->krakenSinkLoaded && game.krakensCollected > audio->lastKrakensCollected) {
+    PlaySound(audio->krakenSink);
+  }
+  audio->lastKrakensCollected = game.krakensCollected;
 }
