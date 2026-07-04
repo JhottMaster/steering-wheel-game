@@ -160,7 +160,7 @@ inline void UpdateGameAudio(GameAudio* audio, const GameState& game, bool gameMo
     UpdateMusicStream(audio->engine);
     const float speedUnit = std::clamp(std::fabs(game.carSpeed) / kGameManualMaxSpeed, 0.0f, 1.0f);
     const float enginePresence = speedUnit * speedUnit;
-    SetMusicVolume(audio->engine, gameModeActive ? 0.06f + enginePresence * 0.30f : 0.0f);
+    SetMusicVolume(audio->engine, gameModeActive ? 0.035f + enginePresence * 0.18f : 0.0f);
     SetMusicPitch(audio->engine, 0.84f + speedUnit * 1.02f);
   }
 
