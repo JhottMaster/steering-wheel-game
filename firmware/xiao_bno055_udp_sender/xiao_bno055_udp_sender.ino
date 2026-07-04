@@ -533,7 +533,7 @@ bool discoverHost() {
   while (!hasHostIp) {
     const uint32_t now = millis();
     updateStatusLed(now);
-Ho
+
     if (lastDiscoveryHeartbeatMs == 0 ||
         now - lastDiscoveryHeartbeatMs >= kDiscoveryHeartbeatIntervalMs) {
       Serial.print("Still listening for server discovery on UDP ");
