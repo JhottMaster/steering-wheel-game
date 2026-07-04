@@ -26,6 +26,7 @@ void TestCenteredPitchTwist() {
 
 void TestAutoDriveAdvancesCar() {
   GameState game;
+  ToggleDriveMode(&game);
   const GameVec2 start = game.carPosition;
   UpdateGame(&game, 0.0f, {}, 1.0f);
   assert(game.carPosition.y < start.y);
@@ -34,7 +35,6 @@ void TestAutoDriveAdvancesCar() {
 
 void TestManualThrottleAndBrake() {
   GameState game;
-  ToggleDriveMode(&game);
   game.carSpeed = 0.0f;
   UpdateGame(&game, 0.0f, GameButtons{true, false}, 1.0f);
   assert(game.carSpeed > 100.0f);
@@ -45,7 +45,6 @@ void TestManualThrottleAndBrake() {
 
 void TestManualBrakeCanReverse() {
   GameState game;
-  ToggleDriveMode(&game);
   game.carSpeed = 0.0f;
   UpdateGame(&game, 0.0f, GameButtons{false, false}, 0.5f);
   assert(game.carSpeed == 0.0f);
@@ -57,7 +56,6 @@ void TestManualBrakeCanReverse() {
 
 void TestManualBrakeStopsBeforeReverse() {
   GameState game;
-  ToggleDriveMode(&game);
   game.carSpeed = 50.0f;
   UpdateGame(&game, 0.0f, GameButtons{false, true}, 0.25f);
   assert(game.carSpeed == 0.0f);
@@ -69,11 +67,11 @@ void TestManualBrakeStopsBeforeReverse() {
 
 void TestDriveModeToggle() {
   GameState game;
-  assert(game.driveMode == DriveMode::kAuto);
-  ToggleDriveMode(&game);
   assert(game.driveMode == DriveMode::kManual);
   ToggleDriveMode(&game);
   assert(game.driveMode == DriveMode::kAuto);
+  ToggleDriveMode(&game);
+  assert(game.driveMode == DriveMode::kManual);
 }
 
 void TestCoinCollection() {
@@ -133,9 +131,54 @@ void TestCityObstaclePushesCar() {
                       obstacleSize, obstacleSize));
 }
 
+void TestCityObstacleDoesNotBounceWhenEscaping() {
+  CityMap city;
+  city.columns = 2;
+  city.rows = 2;
+  const float center = kCityTileSize * 0.5f;
+  const float obstacleSize = kCityTileSize * 0.35f;
+  const float obstacleLeft = center - obstacleSize * 0.5f;
+  city.obstacles.push_back(
+      CityObstacle{obstacleLeft, center - obstacleSize * 0.5f, obstacleSize, obstacleSize, false});
+
+  GameState game;
+  game.carHeadingDeg = 90.0f;
+  game.carPosition = GameVec2{obstacleLeft + obstacleSize + kGameCarCollisionRadius - 2.0f, center};
+  game.carSpeed = 40.0f;
+  UpdateGame(&game, 0.0f, {}, 0.01f, &city);
+  assert(game.hitObstacle);
+  assert(game.carSpeed > 0.0f);
+}
+
+void TestCityObstacleStopsWithoutReversingDirection() {
+  CityMap city;
+  city.columns = 2;
+  city.rows = 2;
+  const float center = kCityTileSize * 0.5f;
+  const float obstacleSize = kCityTileSize * 0.35f;
+  city.obstacles.push_back(
+      CityObstacle{center - obstacleSize * 0.5f, center - obstacleSize * 0.5f,
+                   obstacleSize, obstacleSize, false});
+
+  GameState game;
+  game.carPosition = GameVec2{center - obstacleSize * 0.5f - kGameCarCollisionRadius - 1.0f, center};
+  game.carHeadingDeg = 90.0f;
+  game.carSpeed = 80.0f;
+  UpdateGame(&game, 0.0f, GameButtons{true, false}, 0.1f, &city);
+  assert(game.hitObstacle);
+  assert(game.carSpeed == 0.0f);
+}
+
 void TestSteeringSpeedFactorDropsAtSpeed() {
   assert(ComputeSteeringSpeedFactor(0.0f) > ComputeSteeringSpeedFactor(kGameMaxSpeed));
-  assert(ComputeSteeringSpeedFactor(kGameMaxSpeed) >= 0.70f);
+  assert(ComputeSteeringSpeedFactor(kGameMaxSpeed) >= 0.90f);
+}
+
+void TestManualModeUsesHigherTopSpeed() {
+  GameState game;
+  game.carSpeed = kGameManualMaxSpeed - 10.0f;
+  UpdateGame(&game, 0.0f, GameButtons{true, false}, 1.0f);
+  assert(game.carSpeed == kGameManualMaxSpeed);
 }
 
 void TestLowSpeedYawFactorNearZeroWhenStopped() {
@@ -145,7 +188,6 @@ void TestLowSpeedYawFactorNearZeroWhenStopped() {
 
 void TestReverseSteeringTurnsOppositeDirection() {
   GameState game;
-  ToggleDriveMode(&game);
   game.carSpeed = -50.0f;
   const float startHeading = game.carHeadingDeg;
   UpdateGame(&game, 1.0f, GameButtons{false, true}, 0.25f);
@@ -165,7 +207,10 @@ int main() {
   TestCitySpawnAndCoinCollection();
   TestCityRoadDetection();
   TestCityObstaclePushesCar();
+  TestCityObstacleDoesNotBounceWhenEscaping();
+  TestCityObstacleStopsWithoutReversingDirection();
   TestSteeringSpeedFactorDropsAtSpeed();
+  TestManualModeUsesHigherTopSpeed();
   TestLowSpeedYawFactorNearZeroWhenStopped();
   TestReverseSteeringTurnsOppositeDirection();
   return 0;

@@ -117,7 +117,7 @@ inline void DrawCarFrontWheels(const GameAssets& assets, const GameState& game,
   const Vector2 forward = RotateVector(Vector2{0.0f, -1.0f}, game.carHeadingDeg);
   const Vector2 right = RotateVector(Vector2{1.0f, 0.0f}, game.carHeadingDeg);
   const float frontOffset = carDrawHeight * 0.27f;
-  const float sideOffset = carDrawWidth * 0.34f;
+  const float sideOffset = carDrawWidth * 0.39f;
   const float wheelRotation = game.carHeadingDeg + game.visualWheelTurnDeg;
 
   for (const float side : {-1.0f, 1.0f}) {
@@ -254,6 +254,34 @@ inline void DrawCityCoins(const GameAssets& assets, const CityMap& city) {
     } else {
       DrawCircleV(Vector2{coin.x, coin.y + yOffset}, coinSize * 0.38f,
                   Color{255, 203, 64, alpha});
+    }
+  }
+}
+
+inline void DrawDustParticles(const GameAssets& assets, const GameState& game) {
+  for (const DustParticle& particle : game.dustParticles) {
+    if (!particle.active || particle.maxLifeSeconds <= 0.0f) {
+      continue;
+    }
+    const float lifeT = std::clamp(particle.lifeSeconds / particle.maxLifeSeconds, 0.0f, 1.0f);
+    const float alphaScale = 1.0f - lifeT;
+    const float radius = particle.radius * (0.92f + lifeT * 0.55f);
+    if (TextureLoaded(assets.dustCloud)) {
+      const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.dustCloud.width),
+                                static_cast<float>(assets.dustCloud.height)};
+      const float drawSize = radius * 1.95f;
+      const Rectangle destination = {particle.position.x, particle.position.y, drawSize, drawSize};
+      const Color tint = {255, 255, 255,
+                          static_cast<unsigned char>(std::clamp(alphaScale * 155.0f, 0.0f, 255.0f))};
+      DrawTexturePro(assets.dustCloud, source, destination,
+                     Vector2{drawSize * 0.5f, drawSize * 0.5f}, 0.0f, tint);
+    } else {
+      DrawCircleV(Vector2{particle.position.x, particle.position.y}, radius,
+                  Color{204, 184, 148, static_cast<unsigned char>(alphaScale * 110.0f)});
+      DrawCircleV(
+          Vector2{particle.position.x - radius * 0.18f, particle.position.y - radius * 0.12f},
+          radius * 0.62f,
+          Color{228, 212, 186, static_cast<unsigned char>(alphaScale * 70.0f)});
     }
   }
 }
@@ -433,6 +461,8 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
     }
   }
 
+  game_view_detail::DrawDustParticles(assets, game);
+
   if (TextureLoaded(assets.car)) {
     const Rectangle source = {0.0f, 0.0f, static_cast<float>(assets.car.width),
                               static_cast<float>(assets.car.height)};
@@ -468,8 +498,10 @@ inline void DrawGame(const GameState& game, const GameAssets& assets, const City
              22, Color{232, 236, 224, 255});
   }
   if (hasCity) {
-    DrawText(TextFormat("%s   speed: %.0f", game.onRoad ? "road" : "off road", game.carSpeed), 40,
-             104, 20,
+    DrawText(TextFormat("drive: %s   %s   speed: %.0f",
+                        game.driveMode == DriveMode::kAuto ? "auto" : "button",
+                        game.onRoad ? "road" : "off road", game.carSpeed),
+             40, 104, 20,
              game.onRoad ? Color{232, 236, 224, 255} : Color{246, 187, 87, 255});
   } else {
     DrawText(TextFormat("drive: %s   speed: %.0f",

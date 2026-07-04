@@ -188,11 +188,13 @@ inline void AddCenteredVisual(CityMap* city, CitySprite sprite, float centerX, f
 }
 
 inline void AddRectObstacle(CityMap* city, float centerX, float centerY, float size,
-                            float widthFraction, float heightFraction) {
+                            float widthFraction, float heightFraction,
+                            float offsetYFraction = 0.0f) {
   const float width = size * widthFraction;
   const float height = size * heightFraction;
+  const float offsetY = size * offsetYFraction;
   city->obstacles.push_back(
-      CityObstacle{centerX - width * 0.5f, centerY - height * 0.5f, width, height, false});
+      CityObstacle{centerX - width * 0.5f, centerY - height * 0.5f + offsetY, width, height, false});
 }
 
 inline void AddCircleObstacle(CityMap* city, float centerX, float centerY, float diameter) {
@@ -257,7 +259,7 @@ inline bool TryAddObject(const std::string& token, int column, int row, CityMap*
   if (name == "tree:round" || name == "tree:evergreen" || name == "bush") {
     AddCircleObstacle(city, centerX, centerY, size * 0.58f);
   } else {
-    AddRectObstacle(city, centerX, centerY, size, 0.70f, 0.62f);
+    AddRectObstacle(city, centerX, centerY, size, 0.56f, 0.46f, 0.10f);
   }
   return true;
 }

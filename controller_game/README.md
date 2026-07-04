@@ -33,6 +33,9 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 - uses generated sprites from `assets/sprites`
 - draws roads, buildings, trees, bushes, coins, and spawn markers from `assets/cities/demo_city.csv`
 - uses the CSV city data for spawn position, coin pickup, road/off-road behavior, and obstacle collision
+- starts in button-throttle mode by default, with the car stopped until you accelerate
+- gives button-throttle mode a higher top speed than auto-drive
+- kicks up fading dust puffs and clamps speed harder when the car leaves the road
 - renders a steering wheel from quaternion-derived twist around the selected sensor axis
 - displays the latest quaternion, derived Euler readout, and two button states from the controller
 - shows `button2` as the red left lamp and `button1` as the green right lamp in test mode

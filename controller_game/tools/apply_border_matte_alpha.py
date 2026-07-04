@@ -10,8 +10,24 @@ def is_dark(pixel, threshold):
     return max(r, g, b) <= threshold
 
 
+def parse_protect_rect(value):
+    parts = value.split(",")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError("protect rectangles must be x,y,width,height")
+    try:
+        x, y, width, height = [int(part) for part in parts]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("protect rectangles must use integer values") from exc
+    return (x, y, x + width, y + height)
+
+
+def in_protected_rect(x, y, protect_rects):
+    return any(left <= x < right and top <= y < bottom
+               for left, top, right, bottom in protect_rects)
+
+
 def apply_border_matte_alpha(path, seed_threshold, grow_threshold, transparent_threshold,
-                             feather_threshold):
+                             feather_threshold, protect_rects):
     image = Image.open(path).convert("RGBA")
     source_rgb = image.convert("RGB")
     width, height = image.size
@@ -51,7 +67,7 @@ def apply_border_matte_alpha(path, seed_threshold, grow_threshold, transparent_t
         for x in range(width):
             r, g, b, _ = output_pixels[x, y]
             alpha = 255
-            if matte[y][x]:
+            if matte[y][x] and not in_protected_rect(x, y, protect_rects):
                 brightness = max(r, g, b)
                 if brightness <= transparent_threshold:
                     alpha = 0
@@ -84,6 +100,13 @@ def main():
     parser.add_argument("--grow-threshold", type=int, default=42)
     parser.add_argument("--transparent-threshold", type=int, default=18)
     parser.add_argument("--feather-threshold", type=int, default=42)
+    parser.add_argument(
+        "--protect-rect",
+        action="append",
+        default=[],
+        type=parse_protect_rect,
+        help="Keep alpha opaque within an x,y,width,height rectangle.",
+    )
     args = parser.parse_args()
 
     for path in args.images:
@@ -93,6 +116,7 @@ def main():
             args.grow_threshold,
             args.transparent_threshold,
             args.feather_threshold,
+            args.protect_rect,
         )
         print(f"{path}: transparent={transparent} partial={partial} opaque={opaque}")
 

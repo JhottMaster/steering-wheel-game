@@ -18,6 +18,7 @@ struct GameAssets {
   Texture2D car = {};
   Texture2D carTire = {};
   Texture2D coin = {};
+  Texture2D dustCloud = {};
   Texture2D treeRound = {};
   Texture2D treeEvergreen = {};
   Texture2D bushCluster = {};
@@ -87,6 +88,7 @@ inline GameAssets LoadGameAssets() {
   assets.car = game_assets_detail::LoadSpriteTexture("toy_sports_car.png");
   assets.carTire = game_assets_detail::LoadSpriteTexture("toy_car_tire.png");
   assets.coin = game_assets_detail::LoadSpriteTexture("coin_star.png");
+  assets.dustCloud = game_assets_detail::LoadSpriteTexture("dust_cloud_top_round.png");
   assets.treeRound = game_assets_detail::LoadSpriteTexture("prop_tree_round_ai_01.png");
   assets.treeEvergreen = game_assets_detail::LoadSpriteTexture("prop_evergreen.png");
   assets.bushCluster = game_assets_detail::LoadSpriteTexture("prop_bush_cluster.png");
@@ -159,6 +161,7 @@ inline void UnloadGameAssets(GameAssets* assets) {
   UnloadIfLoaded(&assets->car);
   UnloadIfLoaded(&assets->carTire);
   UnloadIfLoaded(&assets->coin);
+  UnloadIfLoaded(&assets->dustCloud);
   UnloadIfLoaded(&assets->treeRound);
   UnloadIfLoaded(&assets->treeEvergreen);
   UnloadIfLoaded(&assets->bushCluster);
