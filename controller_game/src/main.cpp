@@ -61,6 +61,89 @@ void SaveRoadArtTuningWithLog(const std::string& path, const RoadArtTuning& tuni
   }
 }
 
+void HandleRoadArtEditorInput(RoadArtEditorState* roadArtEditor, RoadArtTuning* roadArtTuning,
+                              const std::string& roadArtTuningPath) {
+  if (!roadArtEditor->active) {
+    return;
+  }
+
+  if (IsKeyPressed(KEY_GRAVE)) {
+    roadArtEditor->selectingAsset = !roadArtEditor->selectingAsset;
+  }
+  if (IsKeyPressed(KEY_UP)) {
+    if (roadArtEditor->selectingAsset) {
+      AdjustRoadArtEditorSprite(roadArtEditor, -1);
+    } else {
+      roadArtEditor->fieldIndex = (roadArtEditor->fieldIndex + 5) % 6;
+    }
+  }
+  if (IsKeyPressed(KEY_DOWN)) {
+    if (roadArtEditor->selectingAsset) {
+      AdjustRoadArtEditorSprite(roadArtEditor, 1);
+    } else {
+      roadArtEditor->fieldIndex = (roadArtEditor->fieldIndex + 1) % 6;
+    }
+  }
+
+  bool changedRoadArtTuning = false;
+  if (IsKeyPressed(KEY_RIGHT)) {
+    AdjustRoadArtEditorValue(roadArtTuning, *roadArtEditor, 1);
+    changedRoadArtTuning = true;
+  }
+  if (IsKeyPressed(KEY_LEFT)) {
+    AdjustRoadArtEditorValue(roadArtTuning, *roadArtEditor, -1);
+    changedRoadArtTuning = true;
+  }
+  if (changedRoadArtTuning) {
+    SaveRoadArtTuningWithLog(roadArtTuningPath, *roadArtTuning);
+  }
+}
+
+void HandleGameHotkeys(bool pauseMenuActive, AppMode appMode, GameState* game,
+                       RoadArtEditorState* roadArtEditor, RoadArtTuning* roadArtTuning,
+                       const std::string& roadArtTuningPath, float* cameraZoomScale) {
+  if (pauseMenuActive || appMode != AppMode::kGame) {
+    return;
+  }
+
+  if (IsKeyPressed(KEY_A)) {
+    ToggleDriveMode(game);
+  }
+  if (IsKeyPressed(KEY_E)) {
+    roadArtEditor->active = !roadArtEditor->active;
+    if (!roadArtEditor->active) {
+      SaveRoadArtTuningWithLog(roadArtTuningPath, *roadArtTuning);
+    }
+  }
+  if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) {
+    *cameraZoomScale = std::max(kCameraZoomMin, *cameraZoomScale / kCameraZoomStep);
+  }
+  if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) {
+    *cameraZoomScale = std::min(kCameraZoomMax, *cameraZoomScale * kCameraZoomStep);
+  }
+  if (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0)) {
+    *cameraZoomScale = 1.0f;
+  }
+
+  HandleRoadArtEditorInput(roadArtEditor, roadArtTuning, roadArtTuningPath);
+}
+
+void HandleHardwareTestHotkeys(bool pauseMenuActive, AppMode appMode, DisplayAxis* displayAxis) {
+  if (pauseMenuActive || appMode != AppMode::kHardwareTest) {
+    return;
+  }
+
+  if (IsKeyPressed(KEY_R)) {
+    *displayAxis = DisplayAxis::kRoll;
+  }
+  if (IsKeyPressed(KEY_P)) {
+    *displayAxis = DisplayAxis::kPitch;
+  }
+  if (IsKeyPressed(KEY_Y)) {
+    *displayAxis = DisplayAxis::kYaw;
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -112,68 +195,9 @@ int main() {
     if (!pauseMenu.active && IsKeyPressed(KEY_T)) {
       appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
     }
-    if (!pauseMenu.active && appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
-      ToggleDriveMode(&game);
-    }
-    if (!pauseMenu.active && appMode == AppMode::kGame && IsKeyPressed(KEY_E)) {
-      roadArtEditor.active = !roadArtEditor.active;
-      if (!roadArtEditor.active) {
-        SaveRoadArtTuningWithLog(roadArtTuningPath, roadArtTuning);
-      }
-    }
-    if (!pauseMenu.active && appMode == AppMode::kGame &&
-        (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT))) {
-      cameraZoomScale = std::max(kCameraZoomMin, cameraZoomScale / kCameraZoomStep);
-    }
-    if (!pauseMenu.active && appMode == AppMode::kGame &&
-        (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD))) {
-      cameraZoomScale = std::min(kCameraZoomMax, cameraZoomScale * kCameraZoomStep);
-    }
-    if (!pauseMenu.active && appMode == AppMode::kGame &&
-        (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0))) {
-      cameraZoomScale = 1.0f;
-    }
-    if (!pauseMenu.active && appMode == AppMode::kGame && roadArtEditor.active) {
-      if (IsKeyPressed(KEY_GRAVE)) {
-        roadArtEditor.selectingAsset = !roadArtEditor.selectingAsset;
-      }
-      if (IsKeyPressed(KEY_UP)) {
-        if (roadArtEditor.selectingAsset) {
-          AdjustRoadArtEditorSprite(&roadArtEditor, -1);
-        } else {
-          roadArtEditor.fieldIndex = (roadArtEditor.fieldIndex + 5) % 6;
-        }
-      }
-      if (IsKeyPressed(KEY_DOWN)) {
-        if (roadArtEditor.selectingAsset) {
-          AdjustRoadArtEditorSprite(&roadArtEditor, 1);
-        } else {
-          roadArtEditor.fieldIndex = (roadArtEditor.fieldIndex + 1) % 6;
-        }
-      }
-      bool changedRoadArtTuning = false;
-      if (IsKeyPressed(KEY_RIGHT)) {
-        AdjustRoadArtEditorValue(&roadArtTuning, roadArtEditor, 1);
-        changedRoadArtTuning = true;
-      }
-      if (IsKeyPressed(KEY_LEFT)) {
-        AdjustRoadArtEditorValue(&roadArtTuning, roadArtEditor, -1);
-        changedRoadArtTuning = true;
-      }
-      if (changedRoadArtTuning) {
-        SaveRoadArtTuningWithLog(roadArtTuningPath, roadArtTuning);
-      }
-    }
-
-    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
-      displayAxis = DisplayAxis::kRoll;
-    }
-    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_P)) {
-      displayAxis = DisplayAxis::kPitch;
-    }
-    if (!pauseMenu.active && appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_Y)) {
-      displayAxis = DisplayAxis::kYaw;
-    }
+    HandleGameHotkeys(pauseMenu.active, appMode, &game, &roadArtEditor, &roadArtTuning,
+                      roadArtTuningPath, &cameraZoomScale);
+    HandleHardwareTestHotkeys(pauseMenu.active, appMode, &displayAxis);
 
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
