@@ -13,7 +13,7 @@
 #include "../app/controller_buttons.h"
 #include "../game/game_logic.h"
 #include "raylib.h"
-#include "steering_wheel_2d.h"
+#include "steering_wheel_3d.h"
 
 using DisplayAxis = OrientationAxis;
 
@@ -61,7 +61,8 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
                              float steeringAngleDeg, float normalizedValue,
                              const ControllerButtonState& buttons, bool hasFreshPackets,
                              bool hasAnyPacket, bool udpReady, const std::string& localIpText,
-                             int screenWidth, int screenHeight) {
+                             const SteeringWheel3DModel& wheelModel, int screenWidth,
+                             int screenHeight) {
   ClearBackground(Color{242, 239, 228, 255});
 
   const float contentWidth = std::min(static_cast<float>(screenWidth) - 80.0f, 1540.0f);
@@ -94,7 +95,8 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
                           wheelPanel.y + wheelPanel.height * 0.52f};
   const float wheelRadius = std::clamp(std::min(wheelPanel.width, wheelPanel.height) * 0.32f,
                                        135.0f, 270.0f);
-  steering_wheel_2d::DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
+  steering_wheel_3d::DrawSteeringWheel3D(wheelModel, lastGoodFrame.orientation, hasAnyPacket,
+                                         steeringAngleDeg, wheelPanel);
   hardware_test_view_detail::DrawButtonLamp(Vector2{center.x - wheelRadius * 1.34f, center.y},
                                             wheelRadius * 0.16f, buttons.red,
                                             Color{92, 35, 34, 255},

@@ -42,6 +42,7 @@ constexpr float kCameraZoomStep = 1.25f;
 
 struct AppRuntime {
   GameAssets gameAssets;
+  SteeringWheel3DModel steeringWheel3D;
   CityMap city;
   std::string roadArtTuningPath;
   RoadArtTuning roadArtTuning;
@@ -186,6 +187,7 @@ int main() {
 
   AppRuntime app;
   app.gameAssets = LoadGameAssets();
+  app.steeringWheel3D = steering_wheel_3d::LoadSteeringWheel3DModel();
   std::vector<std::string> cityWarnings;
   app.city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"), &cityWarnings);
   PrintStartupWarnings("city", cityWarnings);
@@ -366,7 +368,8 @@ int main() {
 
     DrawHardwareTest(app.lastGoodFrame, app.displayAxis, sourceAngleDeg, centeredAngleDeg,
                      steeringAngleDeg, normalizedValue, menuButtons, hasFreshPackets,
-                     hasAnyPacket, udpReady, localIpText, screenWidth, screenHeight);
+                     hasAnyPacket, udpReady, localIpText, app.steeringWheel3D, screenWidth,
+                     screenHeight);
     if (app.pauseMenu.active) {
       if (app.centerConfirm.active) {
         DrawCenterConfirm(app.centerConfirm, steeringAngleDeg, hasFreshPackets, screenWidth,
@@ -389,6 +392,7 @@ int main() {
   }
 
   UnloadGameAudio(&app.gameAudio);
+  steering_wheel_3d::UnloadSteeringWheel3DModel(&app.steeringWheel3D);
   UnloadGameAssets(&app.gameAssets);
   if (IsAudioDeviceReady()) {
     CloseAudioDevice();
