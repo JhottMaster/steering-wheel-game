@@ -15,6 +15,7 @@
 #include "app/app_runtime.h"
 #include "app/center_confirm.h"
 #include "app/controller_buttons.h"
+#include "app/frame_input.h"
 #include "app/pause_menu.h"
 #include "app/performance_log.h"
 #include "app/server_discovery.h"
@@ -33,10 +34,6 @@
 
 namespace {
 constexpr int kUdpPort = 4210;
-constexpr float kVisibleAngleRangeDeg = 45.0f;
-constexpr float kPacketTimeoutSeconds = 1.0f;
-constexpr float kDisplaySteeringDirection = -1.0f;
-constexpr float kGameSteeringDirection = -1.0f;
 constexpr float kCameraZoomMin = 0.15f;
 constexpr float kCameraZoomMax = 1.5f;
 constexpr float kCameraZoomStep = 1.25f;
@@ -171,43 +168,18 @@ int main() {
                       &app.roadArtTuning, app.roadArtTuningPath, &app.cameraZoomScale);
     HandleHardwareTestHotkeys(app.pauseMenu.active, app.appMode, &app.displayAxis);
 
-    if (PollLatestSensorFrame(&receiver, &app.latestFrame)) {
-      app.lastGoodFrame = app.latestFrame;
-      app.lastPacketTime = std::chrono::steady_clock::now();
-      MarkControllerPacketReceived(&app.discovery);
-      RecordSensorFrameForSteering(app.lastGoodFrame, &app.steeringInput);
-    }
-
-    const float dt = GetFrameTime();
+    const FrameInput input = ReadFrameInput(&app, &receiver);
     const auto inputEndTime = PerfClock::now();
-    const auto now = std::chrono::steady_clock::now();
-    const float secondsSincePacket = std::chrono::duration<float>(now - app.lastPacketTime).count();
-    const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
-    const bool hasAnyPacket = app.lastPacketTime != std::chrono::steady_clock::time_point{};
-    const bool roadArtEditorConsumesArrows =
-        app.appMode == AppMode::kGame && app.roadArtEditor.active;
-    const float rawKeyboardDirection =
-        roadArtEditorConsumesArrows
-            ? 0.0f
-            : static_cast<float>(IsKeyDown(KEY_LEFT)) - static_cast<float>(IsKeyDown(KEY_RIGHT));
-    const float keyboardTravelDirection = app.game.carSpeed < 0.0f ? -1.0f : 1.0f;
-    const float keyboardDirection = rawKeyboardDirection * keyboardTravelDirection;
-    UpdateKeyboardSteeringFallback(&app.steeringInput, keyboardDirection, hasFreshPackets, dt);
 
-    UpdateServerDiscoveryBeacon(&app.discovery, &broadcaster, broadcastReady, hasFreshPackets,
-                                app.lastPacketTime, now);
+    UpdateServerDiscoveryBeacon(&app.discovery, &broadcaster, broadcastReady,
+                                input.hasFreshPackets, app.lastPacketTime, input.now);
 
-    const ControllerButtonState menuButtons =
-        ReadControllerButtons(app.lastGoodFrame, hasFreshPackets);
-    const bool pauseChordDown = menuButtons.green && menuButtons.red;
-    const float pauseMenuSteeringAngleDeg =
-        hasAnyPacket ? app.steeringInput.accumulatedGameAngleDeg * kGameSteeringDirection
-                     : app.steeringInput.manualAngleDeg;
     const bool centerConfirmWasActive = app.centerConfirm.active;
     const CenterConfirmAction centerConfirmAction =
-        UpdateCenterConfirm(&app.centerConfirm, menuButtons.green, menuButtons.red);
+        UpdateCenterConfirm(&app.centerConfirm, input.menuButtons.green,
+                            input.menuButtons.red);
     if (centerConfirmAction == CenterConfirmAction::kConfirm) {
-      ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
+      ResetControllerCenter(app.lastGoodFrame, input.hasAnyPacket, &app.steeringInput);
       CloseCenterConfirm(&app.centerConfirm);
     } else if (centerConfirmAction == CenterConfirmAction::kCancel) {
       CloseCenterConfirm(&app.centerConfirm);
@@ -216,8 +188,8 @@ int main() {
     const PauseMenuAction pauseMenuAction =
         centerConfirmWasActive
             ? PauseMenuAction::kNone
-            : UpdatePauseMenu(&app.pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
-                              menuButtons.red, dt);
+            : UpdatePauseMenu(&app.pauseMenu, input.pauseMenuSteeringAngleDeg,
+                              input.menuButtons.green, input.menuButtons.red, input.dt);
 
     switch (pauseMenuAction) {
       case PauseMenuAction::kResume:
@@ -229,7 +201,8 @@ int main() {
         ClosePauseMenu(&app.pauseMenu);
         break;
       case PauseMenuAction::kCenter:
-        OpenCenterConfirm(&app.centerConfirm, menuButtons.green, menuButtons.red);
+        OpenCenterConfirm(&app.centerConfirm, input.menuButtons.green,
+                          input.menuButtons.red);
         break;
       case PauseMenuAction::kQuit:
         app.shouldQuit = true;
@@ -253,41 +226,19 @@ int main() {
         break;
     }
 
-    if (UpdateRecenterGesture(&app.recenterGesture, menuButtons, app.pauseMenu.active,
-                              pauseChordDown, now)) {
+    if (UpdateRecenterGesture(&app.recenterGesture, input.menuButtons, app.pauseMenu.active,
+                              input.pauseChordDown, input.now)) {
       ResetControllerCenter(app.lastGoodFrame, true, &app.steeringInput);
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
-      ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
+      ResetControllerCenter(app.lastGoodFrame, input.hasAnyPacket, &app.steeringInput);
       ResetRecenterGesture(&app.recenterGesture);
     }
 
-    const float sourceAngleDeg =
-        hasAnyPacket ? GetAxisDegrees(app.displayAxis, app.lastGoodFrame)
-                     : app.steeringInput.manualAngleDeg;
-    const float centeredAngleDeg =
-        hasAnyPacket && app.steeringInput.hasCenterFrame
-            ? GetCenteredAxisDegrees(app.displayAxis, app.lastGoodFrame,
-                                     app.steeringInput.centerFrame)
-            : sourceAngleDeg;
-    const float steeringAngleDeg = centeredAngleDeg * kDisplaySteeringDirection;
-    const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
-
-    const float gameSourceAngleDeg =
-        hasAnyPacket ? app.steeringInput.accumulatedGameAngleDeg
-                     : app.steeringInput.manualAngleDeg;
-    const float gameSteeringInput =
-        ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
-    const ControllerButtonState gameInputButtons =
-        ReadControllerButtons(app.lastGoodFrame, hasFreshPackets, !roadArtEditorConsumesArrows);
-    const GameButtons gameButtons = {
-        gameInputButtons.green,
-        gameInputButtons.red,
-    };
     const auto updateStartTime = PerfClock::now();
     if (app.appMode == AppMode::kGame && !app.pauseMenu.active) {
-      UpdateGame(&app.game, gameSteeringInput, gameButtons, dt, &app.city);
+      UpdateGame(&app.game, input.gameSteeringInput, input.gameButtons, input.dt, &app.city);
     }
     const auto updateEndTime = PerfClock::now();
     const auto audioStartTime = updateEndTime;
@@ -302,12 +253,12 @@ int main() {
     BeginDrawing();
     if (app.appMode == AppMode::kGame) {
       DrawGame(app.game, app.gameAssets, app.city, app.roadArtTuning, app.roadArtEditor,
-               hasFreshPackets, hasAnyPacket, app.discovery.wasBroadcastingForLoss, screenWidth,
-               screenHeight, app.cameraZoomScale);
+               input.hasFreshPackets, input.hasAnyPacket, app.discovery.wasBroadcastingForLoss,
+               screenWidth, screenHeight, app.cameraZoomScale);
       if (app.pauseMenu.active) {
         if (app.centerConfirm.active) {
-          DrawCenterConfirm(app.centerConfirm, steeringAngleDeg, hasFreshPackets, screenWidth,
-                            screenHeight);
+          DrawCenterConfirm(app.centerConfirm, input.steeringAngleDeg, input.hasFreshPackets,
+                            screenWidth, screenHeight);
         } else {
           DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
                         screenWidth, screenHeight);
@@ -317,7 +268,8 @@ int main() {
       const auto frameEndTime = PerfClock::now();
       AddPerformanceSample(
           &app.performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
-          static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
+          static_cast<double>(input.dt) * 1000.0,
+          ElapsedMilliseconds(inputStartTime, inputEndTime),
           ElapsedMilliseconds(updateStartTime, updateEndTime),
           ElapsedMilliseconds(audioStartTime, audioEndTime),
           ElapsedMilliseconds(drawStartTime, frameEndTime));
@@ -325,14 +277,14 @@ int main() {
       continue;
     }
 
-    DrawHardwareTest(app.lastGoodFrame, app.displayAxis, sourceAngleDeg, centeredAngleDeg,
-                     steeringAngleDeg, normalizedValue, menuButtons, hasFreshPackets,
-                     hasAnyPacket, udpReady, localIpText, app.steeringWheel3D, screenWidth,
-                     screenHeight);
+    DrawHardwareTest(app.lastGoodFrame, app.displayAxis, input.sourceAngleDeg,
+                     input.centeredAngleDeg, input.steeringAngleDeg, input.normalizedValue,
+                     input.menuButtons, input.hasFreshPackets, input.hasAnyPacket, udpReady,
+                     localIpText, app.steeringWheel3D, screenWidth, screenHeight);
     if (app.pauseMenu.active) {
       if (app.centerConfirm.active) {
-        DrawCenterConfirm(app.centerConfirm, steeringAngleDeg, hasFreshPackets, screenWidth,
-                          screenHeight);
+        DrawCenterConfirm(app.centerConfirm, input.steeringAngleDeg, input.hasFreshPackets,
+                          screenWidth, screenHeight);
       } else {
         DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
                       screenWidth, screenHeight);
@@ -343,7 +295,8 @@ int main() {
     const auto frameEndTime = PerfClock::now();
     AddPerformanceSample(
         &app.performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
-        static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
+        static_cast<double>(input.dt) * 1000.0,
+        ElapsedMilliseconds(inputStartTime, inputEndTime),
         ElapsedMilliseconds(updateStartTime, updateEndTime),
         ElapsedMilliseconds(audioStartTime, audioEndTime),
         ElapsedMilliseconds(drawStartTime, frameEndTime));
