@@ -130,6 +130,12 @@ std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   return joined.str();
 }
 
+void PrintStartupWarnings(const char* label, const std::vector<std::string>& warnings) {
+  for (const std::string& warning : warnings) {
+    std::printf("[%s] %s\n", label, warning.c_str());
+  }
+}
+
 float GetWrappedGameWheelAngleDeg(const SensorFrame& frame, const SensorFrame& centerFrame,
                                   bool hasCenterFrame) {
   return hasCenterFrame ? GetCenteredAxisDegrees(DisplayAxis::kPitch, frame, centerFrame)
@@ -201,9 +207,13 @@ int main() {
   InitAudioDevice();
 
   GameAssets gameAssets = LoadGameAssets();
-  CityMap city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"));
+  std::vector<std::string> cityWarnings;
+  CityMap city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"), &cityWarnings);
+  PrintStartupWarnings("city", cityWarnings);
   const std::string roadArtTuningPath = game_asset_paths::FindConfigPath("road_art_tuning.csv");
-  RoadArtTuning roadArtTuning = LoadRoadArtTuning(roadArtTuningPath);
+  std::vector<std::string> roadArtWarnings;
+  RoadArtTuning roadArtTuning = LoadRoadArtTuning(roadArtTuningPath, &roadArtWarnings);
+  PrintStartupWarnings("road-art", roadArtWarnings);
   RoadArtEditorState roadArtEditor;
   GameAudio gameAudio = LoadGameAudio();
   GameState game;

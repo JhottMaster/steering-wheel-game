@@ -43,7 +43,7 @@ $(OUTPUT): $(SRC) src/game/asset_paths.h src/game/city_map.h src/game/game_asset
 	@if not exist "$(subst /,\,$(BIN_DIR))" mkdir "$(subst /,\,$(BIN_DIR))"
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
 
-$(TEST_OUTPUT): $(TEST_SRC) src/game/game_logic.h
+$(TEST_OUTPUT): $(TEST_SRC) src/game/city_map.h src/game/game_logic.h src/game/road_art_tuning.h
 	@if not exist "$(subst /,\,$(BIN_DIR))" mkdir "$(subst /,\,$(BIN_DIR))"
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
 

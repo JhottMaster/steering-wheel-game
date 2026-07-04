@@ -1,7 +1,12 @@
 #include "game_logic.h"
+#include "road_art_tuning.h"
 
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <vector>
 
 namespace {
 void TestPacketParser() {
@@ -129,6 +134,65 @@ void TestCityRoadDetection() {
   assert(!IsPointOnCityRoad(city, GameVec2{center, 8.0f}));
 }
 
+void TestCityMapParserWarnings() {
+  const std::string path = "build/test_city_map.csv";
+  {
+    std::ofstream file(path);
+    file << "r_h|coin:star|mystery_token,spawn:player@256:256\n";
+  }
+
+  std::vector<std::string> warnings;
+  CityMap city = LoadCityMap(path, &warnings);
+  assert(city.columns == 2);
+  assert(city.rows == 1);
+  assert(city.roads.size() == 1);
+  assert(city.coins.size() == 1);
+  assert(city.hasPlayerSpawn);
+  assert(std::fabs(city.playerSpawnX - kCityTileSize * 1.5f) < 0.001f);
+  assert(std::fabs(city.playerSpawnY - kCityTileSize * 0.5f) < 0.001f);
+  assert(warnings.size() == 1);
+  assert(warnings[0].find("mystery_token") != std::string::npos);
+
+  std::remove(path.c_str());
+}
+
+void TestRoadArtTuningWarningsAndClamps() {
+  const std::string path = "build/test_road_art_tuning.csv";
+  {
+    std::ofstream file(path);
+    file << "sprite,scale_percent,footprint_percent,offset_x,offset_y,anchor_x,anchor_y,draw_mode\n";
+    file << "road_horizontal,350,0,5,6,99,-99,repeat_horizontal\n";
+    file << "road_vertical,bad,100,0,0,0,0,repeat_vertical\n";
+    file << "not_a_sprite,100,100,0,0,0,0,stretch\n";
+    file << "road_curve_top_left,100\n";
+  }
+
+  std::vector<std::string> warnings;
+  RoadArtTuning tuning = LoadRoadArtTuning(path, &warnings);
+  assert(tuning.horizontal.scalePercent == 300);
+  assert(tuning.horizontal.footprintPercent == 1);
+  assert(tuning.horizontal.offsetX == 5);
+  assert(tuning.horizontal.offsetY == 6);
+  assert(tuning.horizontal.anchorX == kRoadArtAnchorMax);
+  assert(tuning.horizontal.anchorY == kRoadArtAnchorMin);
+  assert(tuning.horizontal.drawMode == RoadArtDrawMode::kRepeatHorizontal);
+  assert(warnings.size() == 3);
+  assert(warnings[0].find("scale_percent") != std::string::npos);
+  assert(warnings[1].find("not_a_sprite") != std::string::npos);
+  assert(warnings[2].find("columns") != std::string::npos);
+
+  assert(SaveRoadArtTuning(path, tuning));
+  std::vector<std::string> roundTripWarnings;
+  RoadArtTuning roundTrip = LoadRoadArtTuning(path, &roundTripWarnings);
+  assert(roundTrip.horizontal.scalePercent == 300);
+  assert(roundTrip.horizontal.footprintPercent == 1);
+  assert(roundTrip.horizontal.anchorX == kRoadArtAnchorMax);
+  assert(roundTrip.horizontal.anchorY == kRoadArtAnchorMin);
+  assert(roundTripWarnings.empty());
+
+  std::remove(path.c_str());
+}
+
 void TestCityObstaclePushesCar() {
   CityMap city;
   city.columns = 2;
@@ -225,6 +289,8 @@ int main() {
   TestCitySpawnAndCoinCollection();
   TestCityKrakenCollection();
   TestCityRoadDetection();
+  TestCityMapParserWarnings();
+  TestRoadArtTuningWarningsAndClamps();
   TestCityObstaclePushesCar();
   TestCityObstacleDoesNotBounceWhenEscaping();
   TestCityObstacleStopsWithoutReversingDirection();

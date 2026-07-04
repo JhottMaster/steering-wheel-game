@@ -56,6 +56,12 @@ struct RoadArtEditorState {
 };
 
 namespace road_art_tuning_detail {
+inline void AddWarning(std::vector<std::string>* warnings, const std::string& warning) {
+  if (warnings != nullptr) {
+    warnings->push_back(warning);
+  }
+}
+
 inline std::vector<std::string> Split(const std::string& text, char delimiter) {
   std::vector<std::string> parts;
   std::stringstream stream(text);
@@ -198,16 +204,20 @@ inline bool TryGetRoadSpriteFromConfigToken(const std::string& token, CitySprite
   return true;
 }
 
-inline RoadArtTuning LoadRoadArtTuning(const std::string& path) {
+inline RoadArtTuning LoadRoadArtTuning(const std::string& path,
+                                       std::vector<std::string>* warnings = nullptr) {
   RoadArtTuning tuning;
   std::ifstream file(path);
   if (!file.is_open()) {
+    road_art_tuning_detail::AddWarning(warnings, "Could not open road art tuning: " + path);
     return tuning;
   }
 
   std::string line;
   bool firstLine = true;
+  int lineNumber = 0;
   while (std::getline(file, line)) {
+    ++lineNumber;
     if (line.empty()) {
       continue;
     }
@@ -220,25 +230,59 @@ inline RoadArtTuning LoadRoadArtTuning(const std::string& path) {
 
     const std::vector<std::string> cells = road_art_tuning_detail::Split(line, ',');
     if (cells.size() < 7) {
+      std::ostringstream warning;
+      warning << "Road art tuning row " << lineNumber << " has " << cells.size()
+              << " columns; expected at least 7";
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
       continue;
     }
 
     CitySprite sprite = CitySprite::kRoadHorizontal;
     if (!TryGetRoadSpriteFromConfigToken(cells[0], &sprite)) {
+      std::ostringstream warning;
+      warning << "Unknown road art sprite '" << road_art_tuning_detail::Trim(cells[0])
+              << "' at row " << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
       continue;
     }
 
     RoadPieceArt art = *GetMutableRoadPieceArt(&tuning, sprite);
-    road_art_tuning_detail::TryParseInt(cells[1], &art.scalePercent);
+    if (!road_art_tuning_detail::TryParseInt(cells[1], &art.scalePercent)) {
+      std::ostringstream warning;
+      warning << "Invalid scale_percent for " << ToConfigToken(sprite) << " at row "
+              << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
+    }
     int offsetColumn = 2;
     if (cells.size() >= 8) {
-      road_art_tuning_detail::TryParseInt(cells[2], &art.footprintPercent);
+      if (!road_art_tuning_detail::TryParseInt(cells[2], &art.footprintPercent)) {
+        std::ostringstream warning;
+        warning << "Invalid footprint_percent for " << ToConfigToken(sprite) << " at row "
+                << lineNumber;
+        road_art_tuning_detail::AddWarning(warnings, warning.str());
+      }
       offsetColumn = 3;
     }
-    road_art_tuning_detail::TryParseInt(cells[offsetColumn], &art.offsetX);
-    road_art_tuning_detail::TryParseInt(cells[offsetColumn + 1], &art.offsetY);
-    road_art_tuning_detail::TryParseInt(cells[offsetColumn + 2], &art.anchorX);
-    road_art_tuning_detail::TryParseInt(cells[offsetColumn + 3], &art.anchorY);
+    if (!road_art_tuning_detail::TryParseInt(cells[offsetColumn], &art.offsetX)) {
+      std::ostringstream warning;
+      warning << "Invalid offset_x for " << ToConfigToken(sprite) << " at row " << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
+    }
+    if (!road_art_tuning_detail::TryParseInt(cells[offsetColumn + 1], &art.offsetY)) {
+      std::ostringstream warning;
+      warning << "Invalid offset_y for " << ToConfigToken(sprite) << " at row " << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
+    }
+    if (!road_art_tuning_detail::TryParseInt(cells[offsetColumn + 2], &art.anchorX)) {
+      std::ostringstream warning;
+      warning << "Invalid anchor_x for " << ToConfigToken(sprite) << " at row " << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
+    }
+    if (!road_art_tuning_detail::TryParseInt(cells[offsetColumn + 3], &art.anchorY)) {
+      std::ostringstream warning;
+      warning << "Invalid anchor_y for " << ToConfigToken(sprite) << " at row " << lineNumber;
+      road_art_tuning_detail::AddWarning(warnings, warning.str());
+    }
     art.drawMode = road_art_tuning_detail::ParseDrawMode(cells[offsetColumn + 4]);
     art.scalePercent = std::clamp(art.scalePercent, 1, 300);
     art.footprintPercent = std::clamp(art.footprintPercent, 1, 300);

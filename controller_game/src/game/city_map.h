@@ -102,6 +102,12 @@ struct CityMap {
 };
 
 namespace city_map_detail {
+inline void AddWarning(std::vector<std::string>* warnings, const std::string& warning) {
+  if (warnings != nullptr) {
+    warnings->push_back(warning);
+  }
+}
+
 inline std::string Trim(std::string value) {
   while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
     value.erase(value.begin());
@@ -290,10 +296,11 @@ inline bool TryAddObject(const std::string& token, int column, int row, CityMap*
 }
 }  // namespace city_map_detail
 
-inline CityMap LoadCityMap(const std::string& path) {
+inline CityMap LoadCityMap(const std::string& path, std::vector<std::string>* warnings = nullptr) {
   CityMap city;
   std::ifstream file(path);
   if (!file.is_open()) {
+    city_map_detail::AddWarning(warnings, "Could not open city map: " + path);
     return city;
   }
 
@@ -308,7 +315,12 @@ inline CityMap LoadCityMap(const std::string& path) {
           continue;
         }
         if (!city_map_detail::TryAddRoad(token, column, row, &city)) {
-          city_map_detail::TryAddObject(token, column, row, &city);
+          if (!city_map_detail::TryAddObject(token, column, row, &city)) {
+            std::ostringstream warning;
+            warning << "Unknown city token '" << token << "' at row " << (row + 1)
+                    << ", column " << (column + 1);
+            city_map_detail::AddWarning(warnings, warning.str());
+          }
         }
       }
     }
