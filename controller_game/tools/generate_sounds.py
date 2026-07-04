@@ -48,18 +48,22 @@ def make_coin():
 
 
 def make_engine():
-    duration = 1.25
+    duration = 1.35
     total = int(SAMPLE_RATE * duration)
     samples = []
     for i in range(total):
         t = i / SAMPLE_RATE
-        wobble = 1.0 + 0.035 * math.sin(2.0 * math.pi * 5.0 * t)
-        base = 72.0 * wobble
-        tone = 0.55 * math.sin(2.0 * math.pi * base * t)
-        tone += 0.25 * math.sin(2.0 * math.pi * base * 2.0 * t)
-        tone += 0.12 * math.sin(2.0 * math.pi * base * 3.0 * t)
-        putter = 0.12 * math.sin(2.0 * math.pi * 18.0 * t)
-        samples.append((tone + putter) * 0.28 * envelope(i, total, 0.03, 0.03))
+        rumble = 1.0 + 0.018 * math.sin(2.0 * math.pi * 4.0 * t)
+        snarl = 1.0 + 0.024 * math.sin(2.0 * math.pi * 12.0 * t)
+        base = 96.0 * rumble
+        tone = 0.42 * math.sin(2.0 * math.pi * base * t)
+        tone += 0.24 * math.sin(2.0 * math.pi * base * 2.0 * t + 0.08)
+        tone += 0.18 * math.sin(2.0 * math.pi * base * 3.0 * t + 0.17)
+        tone += 0.12 * math.sin(2.0 * math.pi * base * 4.0 * t + 0.29)
+        tone += 0.08 * math.sin(2.0 * math.pi * base * 6.0 * t * snarl + 0.41)
+        growl = 0.10 * math.sin(2.0 * math.pi * 48.0 * t)
+        rasp = 0.05 * math.sin(2.0 * math.pi * 196.0 * t) * (0.5 + 0.5 * math.sin(2.0 * math.pi * 9.0 * t))
+        samples.append((tone + growl + rasp) * 0.30 * envelope(i, total, 0.03, 0.03))
     write_wav(SOUNDS / "toy_engine_loop.wav", samples)
 
 

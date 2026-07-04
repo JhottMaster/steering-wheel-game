@@ -97,9 +97,10 @@ inline void UpdateGameAudio(GameAudio* audio, const GameState& game, bool gameMo
 
   if (audio->engineLoaded) {
     UpdateMusicStream(audio->engine);
-    const float speedUnit = std::clamp(game.carSpeed / kGameMaxSpeed, 0.0f, 1.0f);
-    SetMusicVolume(audio->engine, gameModeActive ? 0.08f + speedUnit * 0.18f : 0.0f);
-    SetMusicPitch(audio->engine, 0.75f + speedUnit * 0.65f);
+    const float speedUnit = std::clamp(std::fabs(game.carSpeed) / kGameManualMaxSpeed, 0.0f, 1.0f);
+    const float enginePresence = speedUnit * speedUnit;
+    SetMusicVolume(audio->engine, gameModeActive ? 0.06f + enginePresence * 0.30f : 0.0f);
+    SetMusicPitch(audio->engine, 0.84f + speedUnit * 1.02f);
   }
 
   if (audio->coinLoaded && game.score > audio->lastScore) {
