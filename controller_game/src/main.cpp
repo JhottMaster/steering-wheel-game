@@ -38,6 +38,28 @@ constexpr float kCameraZoomMin = 0.15f;
 constexpr float kCameraZoomMax = 1.5f;
 constexpr float kCameraZoomStep = 1.25f;
 
+struct AppRuntime {
+  GameAssets gameAssets;
+  CityMap city;
+  std::string roadArtTuningPath;
+  RoadArtTuning roadArtTuning;
+  RoadArtEditorState roadArtEditor;
+  GameAudio gameAudio;
+  GameState game;
+  SensorFrame latestFrame;
+  SensorFrame lastGoodFrame;
+  std::chrono::steady_clock::time_point lastPacketTime = {};
+  DisplayAxis displayAxis = DisplayAxis::kPitch;
+  AppMode appMode = AppMode::kGame;
+  SteeringInputState steeringInput;
+  DiscoveryBeaconState discovery;
+  RecenterGestureState recenterGesture;
+  float cameraZoomScale = 1.0f;
+  PauseMenuState pauseMenu;
+  bool shouldQuit = false;
+  PerformanceWindow performance;
+};
+
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
   for (size_t i = 0; i < addresses.size(); ++i) {
@@ -152,7 +174,6 @@ int main() {
   const bool udpReady = receiver.Open(kUdpPort);
   const bool broadcastReady = broadcaster.Open();
   const std::string localIpText = JoinLocalIps(platform::GetLocalIpv4Addresses());
-  const auto appStartTime = std::chrono::steady_clock::now();
 
   SetConfigFlags(platform::GetWindowConfigFlags());
   InitWindow(platform::kWindowWidth, platform::kWindowHeight, platform::kWindowTitle);
@@ -160,149 +181,143 @@ int main() {
   SetTargetFPS(60);
   InitAudioDevice();
 
-  GameAssets gameAssets = LoadGameAssets();
+  AppRuntime app;
+  app.gameAssets = LoadGameAssets();
   std::vector<std::string> cityWarnings;
-  CityMap city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"), &cityWarnings);
+  app.city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"), &cityWarnings);
   PrintStartupWarnings("city", cityWarnings);
-  const std::string roadArtTuningPath = game_asset_paths::FindConfigPath("road_art_tuning.csv");
+  app.roadArtTuningPath = game_asset_paths::FindConfigPath("road_art_tuning.csv");
   std::vector<std::string> roadArtWarnings;
-  RoadArtTuning roadArtTuning = LoadRoadArtTuning(roadArtTuningPath, &roadArtWarnings);
+  app.roadArtTuning = LoadRoadArtTuning(app.roadArtTuningPath, &roadArtWarnings);
   PrintStartupWarnings("road-art", roadArtWarnings);
-  RoadArtEditorState roadArtEditor;
-  GameAudio gameAudio = LoadGameAudio();
-  GameState game;
-  InitializeGameFromCity(&game, &city);
-  SensorFrame latestFrame;
-  SensorFrame lastGoodFrame;
-  auto lastPacketTime = std::chrono::steady_clock::time_point{};
-  DisplayAxis displayAxis = DisplayAxis::kPitch;
-  AppMode appMode = AppMode::kGame;
-  SteeringInputState steeringInput;
-  DiscoveryBeaconState discovery;
-  RecenterGestureState recenterGesture;
-  float cameraZoomScale = 1.0f;
-  PauseMenuState pauseMenu;
-  OpenPauseMenu(&pauseMenu);
-  bool shouldQuit = false;
-  PerformanceWindow performance;
+  app.gameAudio = LoadGameAudio();
+  InitializeGameFromCity(&app.game, &app.city);
+  OpenPauseMenu(&app.pauseMenu);
 
-  while (!shouldQuit && !WindowShouldClose()) {
+  while (!app.shouldQuit && !WindowShouldClose()) {
     const auto frameStartTime = PerfClock::now();
     auto inputStartTime = frameStartTime;
     if (platform::ShouldToggleFullscreen()) {
       ToggleFullscreen();
     }
-    if (!pauseMenu.active && IsKeyPressed(KEY_T)) {
-      appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
+    if (!app.pauseMenu.active && IsKeyPressed(KEY_T)) {
+      app.appMode = app.appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
     }
-    HandleGameHotkeys(pauseMenu.active, appMode, &game, &roadArtEditor, &roadArtTuning,
-                      roadArtTuningPath, &cameraZoomScale);
-    HandleHardwareTestHotkeys(pauseMenu.active, appMode, &displayAxis);
+    HandleGameHotkeys(app.pauseMenu.active, app.appMode, &app.game, &app.roadArtEditor,
+                      &app.roadArtTuning, app.roadArtTuningPath, &app.cameraZoomScale);
+    HandleHardwareTestHotkeys(app.pauseMenu.active, app.appMode, &app.displayAxis);
 
-    if (PollLatestSensorFrame(&receiver, &latestFrame)) {
-      lastGoodFrame = latestFrame;
-      lastPacketTime = std::chrono::steady_clock::now();
-      MarkControllerPacketReceived(&discovery);
-      RecordSensorFrameForSteering(lastGoodFrame, &steeringInput);
+    if (PollLatestSensorFrame(&receiver, &app.latestFrame)) {
+      app.lastGoodFrame = app.latestFrame;
+      app.lastPacketTime = std::chrono::steady_clock::now();
+      MarkControllerPacketReceived(&app.discovery);
+      RecordSensorFrameForSteering(app.lastGoodFrame, &app.steeringInput);
     }
 
     const float dt = GetFrameTime();
     const auto inputEndTime = PerfClock::now();
     const auto now = std::chrono::steady_clock::now();
-    const float secondsSincePacket = std::chrono::duration<float>(now - lastPacketTime).count();
+    const float secondsSincePacket = std::chrono::duration<float>(now - app.lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
-    const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
-    const bool roadArtEditorConsumesArrows = appMode == AppMode::kGame && roadArtEditor.active;
+    const bool hasAnyPacket = app.lastPacketTime != std::chrono::steady_clock::time_point{};
+    const bool roadArtEditorConsumesArrows =
+        app.appMode == AppMode::kGame && app.roadArtEditor.active;
     const float rawKeyboardDirection =
         roadArtEditorConsumesArrows
             ? 0.0f
             : static_cast<float>(IsKeyDown(KEY_LEFT)) - static_cast<float>(IsKeyDown(KEY_RIGHT));
-    const float keyboardTravelDirection = game.carSpeed < 0.0f ? -1.0f : 1.0f;
+    const float keyboardTravelDirection = app.game.carSpeed < 0.0f ? -1.0f : 1.0f;
     const float keyboardDirection = rawKeyboardDirection * keyboardTravelDirection;
-    UpdateKeyboardSteeringFallback(&steeringInput, keyboardDirection, hasFreshPackets, dt);
+    UpdateKeyboardSteeringFallback(&app.steeringInput, keyboardDirection, hasFreshPackets, dt);
 
-    UpdateServerDiscoveryBeacon(&discovery, &broadcaster, broadcastReady, hasFreshPackets,
-                                lastPacketTime, now);
+    UpdateServerDiscoveryBeacon(&app.discovery, &broadcaster, broadcastReady, hasFreshPackets,
+                                app.lastPacketTime, now);
 
     const ControllerButtonState menuButtons =
-        ReadControllerButtons(lastGoodFrame, hasFreshPackets);
+        ReadControllerButtons(app.lastGoodFrame, hasFreshPackets);
     const bool pauseChordDown = menuButtons.green && menuButtons.red;
     const float pauseMenuSteeringAngleDeg =
-        hasAnyPacket ? GetWrappedGameWheelAngleDeg(lastGoodFrame, steeringInput) *
+        hasAnyPacket ? GetWrappedGameWheelAngleDeg(app.lastGoodFrame, app.steeringInput) *
                            kGameSteeringDirection
-                     : steeringInput.manualAngleDeg;
+                     : app.steeringInput.manualAngleDeg;
     const PauseMenuAction pauseMenuAction =
-        UpdatePauseMenu(&pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
+        UpdatePauseMenu(&app.pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
                         menuButtons.red, dt);
 
     switch (pauseMenuAction) {
       case PauseMenuAction::kResume:
-        ClosePauseMenu(&pauseMenu);
+        ClosePauseMenu(&app.pauseMenu);
         break;
       case PauseMenuAction::kRestart:
-        game = GameState{};
-        InitializeGameFromCity(&game, &city);
-        ClosePauseMenu(&pauseMenu);
+        app.game = GameState{};
+        InitializeGameFromCity(&app.game, &app.city);
+        ClosePauseMenu(&app.pauseMenu);
         break;
       case PauseMenuAction::kCenter:
-        ResetControllerCenter(lastGoodFrame, hasAnyPacket, &steeringInput);
+        ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
         break;
       case PauseMenuAction::kQuit:
-        shouldQuit = true;
+        app.shouldQuit = true;
         break;
       case PauseMenuAction::kToggleDriveMode:
-        ToggleDriveMode(&game);
+        ToggleDriveMode(&app.game);
         break;
       case PauseMenuAction::kToggleHardwareTest:
-        appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
-        ClosePauseMenu(&pauseMenu);
+        app.appMode = app.appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
+        ClosePauseMenu(&app.pauseMenu);
         break;
       case PauseMenuAction::kZoomIn:
-        cameraZoomScale = std::min(kCameraZoomMax, cameraZoomScale * kCameraZoomStep);
+        app.cameraZoomScale =
+            std::min(kCameraZoomMax, app.cameraZoomScale * kCameraZoomStep);
         break;
       case PauseMenuAction::kZoomOut:
-        cameraZoomScale = std::max(kCameraZoomMin, cameraZoomScale / kCameraZoomStep);
+        app.cameraZoomScale =
+            std::max(kCameraZoomMin, app.cameraZoomScale / kCameraZoomStep);
         break;
       case PauseMenuAction::kNone:
         break;
     }
 
-    if (UpdateRecenterGesture(&recenterGesture, menuButtons, pauseMenu.active, pauseChordDown,
-                              now)) {
-      ResetControllerCenter(lastGoodFrame, true, &steeringInput);
+    if (UpdateRecenterGesture(&app.recenterGesture, menuButtons, app.pauseMenu.active,
+                              pauseChordDown, now)) {
+      ResetControllerCenter(app.lastGoodFrame, true, &app.steeringInput);
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
-      ResetControllerCenter(lastGoodFrame, hasAnyPacket, &steeringInput);
-      ResetRecenterGesture(&recenterGesture);
+      ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
+      ResetRecenterGesture(&app.recenterGesture);
     }
 
     const float sourceAngleDeg =
-        hasAnyPacket ? GetAxisDegrees(displayAxis, lastGoodFrame) : steeringInput.manualAngleDeg;
+        hasAnyPacket ? GetAxisDegrees(app.displayAxis, app.lastGoodFrame)
+                     : app.steeringInput.manualAngleDeg;
     const float centeredAngleDeg =
-        hasAnyPacket && steeringInput.hasCenterFrame
-            ? GetCenteredAxisDegrees(displayAxis, lastGoodFrame, steeringInput.centerFrame)
+        hasAnyPacket && app.steeringInput.hasCenterFrame
+            ? GetCenteredAxisDegrees(app.displayAxis, app.lastGoodFrame,
+                                     app.steeringInput.centerFrame)
             : sourceAngleDeg;
     const float steeringAngleDeg = centeredAngleDeg * kDisplaySteeringDirection;
     const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
     const float gameSourceAngleDeg =
-        hasAnyPacket ? steeringInput.accumulatedGameAngleDeg : steeringInput.manualAngleDeg;
+        hasAnyPacket ? app.steeringInput.accumulatedGameAngleDeg
+                     : app.steeringInput.manualAngleDeg;
     const float gameSteeringInput =
         ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
     const ControllerButtonState gameInputButtons =
-        ReadControllerButtons(lastGoodFrame, hasFreshPackets, !roadArtEditorConsumesArrows);
+        ReadControllerButtons(app.lastGoodFrame, hasFreshPackets, !roadArtEditorConsumesArrows);
     const GameButtons gameButtons = {
         gameInputButtons.green,
         gameInputButtons.red,
     };
     const auto updateStartTime = PerfClock::now();
-    if (appMode == AppMode::kGame && !pauseMenu.active) {
-      UpdateGame(&game, gameSteeringInput, gameButtons, dt, &city);
+    if (app.appMode == AppMode::kGame && !app.pauseMenu.active) {
+      UpdateGame(&app.game, gameSteeringInput, gameButtons, dt, &app.city);
     }
     const auto updateEndTime = PerfClock::now();
     const auto audioStartTime = updateEndTime;
-    UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame && !pauseMenu.active);
+    UpdateGameAudio(&app.gameAudio, app.game,
+                    app.appMode == AppMode::kGame && !app.pauseMenu.active);
     const auto audioEndTime = PerfClock::now();
 
     const int screenWidth = GetScreenWidth();
@@ -310,47 +325,47 @@ int main() {
 
     const auto drawStartTime = PerfClock::now();
     BeginDrawing();
-    if (appMode == AppMode::kGame) {
-      DrawGame(game, gameAssets, city, roadArtTuning, roadArtEditor, hasFreshPackets,
-               hasAnyPacket, discovery.wasBroadcastingForLoss, screenWidth, screenHeight,
-               cameraZoomScale);
-      if (pauseMenu.active) {
-        DrawPauseMenu(pauseMenu, game, appMode, localIpText, cameraZoomScale, screenWidth,
-                      screenHeight);
+    if (app.appMode == AppMode::kGame) {
+      DrawGame(app.game, app.gameAssets, app.city, app.roadArtTuning, app.roadArtEditor,
+               hasFreshPackets, hasAnyPacket, app.discovery.wasBroadcastingForLoss, screenWidth,
+               screenHeight, app.cameraZoomScale);
+      if (app.pauseMenu.active) {
+        DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
+                      screenWidth, screenHeight);
       }
       EndDrawing();
       const auto frameEndTime = PerfClock::now();
       AddPerformanceSample(
-          &performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
+          &app.performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
           static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
           ElapsedMilliseconds(updateStartTime, updateEndTime),
           ElapsedMilliseconds(audioStartTime, audioEndTime),
           ElapsedMilliseconds(drawStartTime, frameEndTime));
-      MaybeLogPerformance(&performance, appMode, pauseMenu.active);
+      MaybeLogPerformance(&app.performance, app.appMode, app.pauseMenu.active);
       continue;
     }
 
-    DrawHardwareTest(lastGoodFrame, displayAxis, sourceAngleDeg, centeredAngleDeg,
+    DrawHardwareTest(app.lastGoodFrame, app.displayAxis, sourceAngleDeg, centeredAngleDeg,
                      steeringAngleDeg, normalizedValue, menuButtons, hasFreshPackets,
                      hasAnyPacket, udpReady, localIpText, screenWidth, screenHeight);
-    if (pauseMenu.active) {
-      DrawPauseMenu(pauseMenu, game, appMode, localIpText, cameraZoomScale, screenWidth,
-                    screenHeight);
+    if (app.pauseMenu.active) {
+      DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
+                    screenWidth, screenHeight);
     }
 
     EndDrawing();
     const auto frameEndTime = PerfClock::now();
     AddPerformanceSample(
-        &performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
+        &app.performance, ElapsedMilliseconds(frameStartTime, frameEndTime),
         static_cast<double>(dt) * 1000.0, ElapsedMilliseconds(inputStartTime, inputEndTime),
         ElapsedMilliseconds(updateStartTime, updateEndTime),
         ElapsedMilliseconds(audioStartTime, audioEndTime),
         ElapsedMilliseconds(drawStartTime, frameEndTime));
-    MaybeLogPerformance(&performance, appMode, pauseMenu.active);
+    MaybeLogPerformance(&app.performance, app.appMode, app.pauseMenu.active);
   }
 
-  UnloadGameAudio(&gameAudio);
-  UnloadGameAssets(&gameAssets);
+  UnloadGameAudio(&app.gameAudio);
+  UnloadGameAssets(&app.gameAssets);
   if (IsAudioDeviceReady()) {
     CloseAudioDevice();
   }
