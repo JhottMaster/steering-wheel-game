@@ -1,12 +1,14 @@
 #include "game_logic.h"
 #include "road_art_tuning.h"
 #include "../app/pause_menu.h"
+#include "../app/server_discovery.h"
 #include "../input/datagram_receive.h"
 #include "../input/sensor_receiver.h"
 #include "../input/steering_input.h"
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -38,6 +40,19 @@ struct FakeReceiver {
     std::copy(datagram.payload.begin(), datagram.payload.begin() + bytesToCopy, buffer);
     *receivedBytes = bytesToCopy;
     return DatagramReceiveStatus::kPacket;
+  }
+};
+
+struct FakeBroadcaster {
+  int sendCount = 0;
+  std::string lastPayload;
+  int lastPort = 0;
+
+  bool SendBroadcast(const char* payload, int payloadLength, int port) {
+    ++sendCount;
+    lastPayload.assign(payload, payload + payloadLength);
+    lastPort = port;
+    return true;
   }
 };
 
@@ -143,6 +158,34 @@ void TestPauseChordOpensMenu() {
   assert(UpdatePauseMenu(&menu, 0.0f, true, true, kPauseChordHoldSeconds * 0.6f) ==
          PauseMenuAction::kNone);
   assert(menu.active);
+}
+
+void TestServerDiscoveryBeacon() {
+  using Clock = std::chrono::steady_clock;
+  const Clock::time_point start = Clock::time_point{} + std::chrono::seconds(30);
+  FakeBroadcaster broadcaster;
+  DiscoveryBeaconState discovery;
+
+  UpdateServerDiscoveryBeacon(&discovery, &broadcaster, true, false, {}, start, false);
+  assert(broadcaster.sendCount == 1);
+  assert(broadcaster.lastPayload == kServerDiscoveryMessage);
+  assert(broadcaster.lastPort == kServerDiscoveryPort);
+
+  UpdateServerDiscoveryBeacon(&discovery, &broadcaster, true, false, {},
+                              start + std::chrono::seconds(1), false);
+  assert(broadcaster.sendCount == 1);
+
+  MarkControllerPacketReceived(&discovery);
+  const Clock::time_point packetTime = start + std::chrono::seconds(2);
+  UpdateServerDiscoveryBeacon(&discovery, &broadcaster, true, true, packetTime,
+                              packetTime + std::chrono::seconds(1), false);
+  assert(broadcaster.sendCount == 1);
+  assert(!discovery.wasBroadcastingForLoss);
+
+  UpdateServerDiscoveryBeacon(&discovery, &broadcaster, true, false, packetTime,
+                              packetTime + std::chrono::seconds(6), false);
+  assert(broadcaster.sendCount == 2);
+  assert(discovery.wasBroadcastingForLoss);
 }
 
 void TestAutoDriveAdvancesCar() {
@@ -402,6 +445,7 @@ int main() {
   TestKeyboardSteeringFallback();
   TestPauseMenuSteeringAndButtons();
   TestPauseChordOpensMenu();
+  TestServerDiscoveryBeacon();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestManualBrakeCanReverse();

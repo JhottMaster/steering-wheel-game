@@ -15,6 +15,7 @@
 #include "app/controller_buttons.h"
 #include "app/pause_menu.h"
 #include "app/performance_log.h"
+#include "app/server_discovery.h"
 #include "game/asset_paths.h"
 #include "game/game_audio.h"
 #include "game/game_logic.h"
@@ -28,9 +29,6 @@
 
 namespace {
 constexpr int kUdpPort = 4210;
-constexpr int kServerDiscoveryPort = 4211;
-constexpr float kServerBeaconIntervalSeconds = 3.0f;
-constexpr float kServerBeaconStartDelaySeconds = 5.0f;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
 constexpr float kPacketTimeoutSeconds = 1.0f;
 constexpr float kDisplaySteeringDirection = -1.0f;
@@ -40,13 +38,6 @@ constexpr float kCameraZoomMax = 1.5f;
 constexpr float kCameraZoomStep = 1.25f;
 constexpr float kRecenterGestureWindowSeconds = 1.5f;
 constexpr int kRecenterRedPressesRequired = 3;
-constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
-
-struct DiscoveryBeaconState {
-  PerfClock::time_point lastBeaconTime = {};
-  bool hasEverReceivedPacket = false;
-  bool wasBroadcastingForLoss = false;
-};
 
 struct RecenterGestureState {
   bool active = false;
@@ -199,8 +190,7 @@ int main() {
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
       lastPacketTime = std::chrono::steady_clock::now();
-      discovery.hasEverReceivedPacket = true;
-      discovery.wasBroadcastingForLoss = false;
+      MarkControllerPacketReceived(&discovery);
       RecordSensorFrameForSteering(lastGoodFrame, &steeringInput);
     }
 
@@ -219,30 +209,8 @@ int main() {
     const float keyboardDirection = rawKeyboardDirection * keyboardTravelDirection;
     UpdateKeyboardSteeringFallback(&steeringInput, keyboardDirection, hasFreshPackets, dt);
 
-    const float secondsSinceBeacon =
-        discovery.lastBeaconTime == std::chrono::steady_clock::time_point{}
-            ? kServerBeaconIntervalSeconds
-            : std::chrono::duration<float>(now - discovery.lastBeaconTime).count();
-
-    const bool shouldStartInitialBroadcast = !discovery.hasEverReceivedPacket;
-    const bool shouldStartLossBroadcast =
-        discovery.hasEverReceivedPacket && !hasFreshPackets &&
-        std::chrono::duration<float>(now - lastPacketTime).count() >= kServerBeaconStartDelaySeconds;
-    const bool shouldBroadcast = shouldStartInitialBroadcast || shouldStartLossBroadcast;
-
-    if (shouldStartLossBroadcast && !discovery.wasBroadcastingForLoss) {
-      discovery.lastBeaconTime = std::chrono::steady_clock::time_point{};
-      discovery.wasBroadcastingForLoss = true;
-    }
-
-    if (broadcastReady && shouldBroadcast && secondsSinceBeacon >= kServerBeaconIntervalSeconds) {
-      broadcaster.SendBroadcast(kServerDiscoveryMessage,
-                                static_cast<int>(sizeof(kServerDiscoveryMessage) - 1),
-                                kServerDiscoveryPort);
-      std::printf("Server discovery broadcast sent to UDP %d: %s\n", kServerDiscoveryPort,
-                  kServerDiscoveryMessage);
-      discovery.lastBeaconTime = now;
-    }
+    UpdateServerDiscoveryBeacon(&discovery, &broadcaster, broadcastReady, hasFreshPackets,
+                                lastPacketTime, now);
 
     const ControllerButtonState menuButtons =
         ReadControllerButtons(lastGoodFrame, hasFreshPackets);
