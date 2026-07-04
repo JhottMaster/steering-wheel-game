@@ -12,6 +12,7 @@
 #endif
 
 #include "app/app_mode.h"
+#include "app/app_runtime.h"
 #include "app/center_confirm.h"
 #include "app/controller_buttons.h"
 #include "app/pause_menu.h"
@@ -40,30 +41,6 @@ constexpr float kCameraZoomMin = 0.15f;
 constexpr float kCameraZoomMax = 1.5f;
 constexpr float kCameraZoomStep = 1.25f;
 
-struct AppRuntime {
-  GameAssets gameAssets;
-  SteeringWheel3DModel steeringWheel3D;
-  CityMap city;
-  std::string roadArtTuningPath;
-  RoadArtTuning roadArtTuning;
-  RoadArtEditorState roadArtEditor;
-  GameAudio gameAudio;
-  GameState game;
-  SensorFrame latestFrame;
-  SensorFrame lastGoodFrame;
-  std::chrono::steady_clock::time_point lastPacketTime = {};
-  DisplayAxis displayAxis = DisplayAxis::kPitch;
-  AppMode appMode = AppMode::kGame;
-  SteeringInputState steeringInput;
-  DiscoveryBeaconState discovery;
-  RecenterGestureState recenterGesture;
-  float cameraZoomScale = 1.0f;
-  PauseMenuState pauseMenu;
-  CenterConfirmState centerConfirm;
-  bool shouldQuit = false;
-  PerformanceWindow performance;
-};
-
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
   for (size_t i = 0; i < addresses.size(); ++i) {
@@ -73,12 +50,6 @@ std::string JoinLocalIps(const std::vector<std::string>& addresses) {
     joined << addresses[i];
   }
   return joined.str();
-}
-
-void PrintStartupWarnings(const char* label, const std::vector<std::string>& warnings) {
-  for (const std::string& warning : warnings) {
-    std::printf("[%s] %s\n", label, warning.c_str());
-  }
 }
 
 void SaveRoadArtTuningWithLog(const std::string& path, const RoadArtTuning& tuning) {
@@ -185,19 +156,7 @@ int main() {
   SetTargetFPS(60);
   InitAudioDevice();
 
-  AppRuntime app;
-  app.gameAssets = LoadGameAssets();
-  app.steeringWheel3D = steering_wheel_3d::LoadSteeringWheel3DModel();
-  std::vector<std::string> cityWarnings;
-  app.city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"), &cityWarnings);
-  PrintStartupWarnings("city", cityWarnings);
-  app.roadArtTuningPath = game_asset_paths::FindConfigPath("road_art_tuning.csv");
-  std::vector<std::string> roadArtWarnings;
-  app.roadArtTuning = LoadRoadArtTuning(app.roadArtTuningPath, &roadArtWarnings);
-  PrintStartupWarnings("road-art", roadArtWarnings);
-  app.gameAudio = LoadGameAudio();
-  InitializeGameFromCity(&app.game, &app.city);
-  OpenPauseMenu(&app.pauseMenu);
+  AppRuntime app = LoadAppRuntime();
 
   while (!app.shouldQuit && !WindowShouldClose()) {
     const auto frameStartTime = PerfClock::now();
@@ -391,9 +350,7 @@ int main() {
     MaybeLogPerformance(&app.performance, app.appMode, app.pauseMenu.active);
   }
 
-  UnloadGameAudio(&app.gameAudio);
-  steering_wheel_3d::UnloadSteeringWheel3DModel(&app.steeringWheel3D);
-  UnloadGameAssets(&app.gameAssets);
+  UnloadAppRuntime(&app);
   if (IsAudioDeviceReady()) {
     CloseAudioDevice();
   }
