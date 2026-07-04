@@ -69,6 +69,19 @@ struct PerformanceWindow {
   PerfClock::time_point startedAt = PerfClock::now();
 };
 
+struct DiscoveryBeaconState {
+  PerfClock::time_point lastBeaconTime = {};
+  bool hasEverReceivedPacket = false;
+  bool wasBroadcastingForLoss = false;
+};
+
+struct RecenterGestureState {
+  bool active = false;
+  PerfClock::time_point startedAt = {};
+  bool redWasDown = false;
+  int redPressCount = 0;
+};
+
 double ElapsedMilliseconds(PerfClock::time_point start, PerfClock::time_point end) {
   return std::chrono::duration<double, std::milli>(end - start).count();
 }
@@ -130,6 +143,16 @@ void PrintStartupWarnings(const char* label, const std::vector<std::string>& war
   }
 }
 
+void ResetRecenterGesture(RecenterGestureState* gesture) {
+  *gesture = RecenterGestureState{};
+}
+
+void SaveRoadArtTuningWithLog(const std::string& path, const RoadArtTuning& tuning) {
+  if (!SaveRoadArtTuning(path, tuning)) {
+    std::printf("[road-art] failed to save tuning config: %s\n", path.c_str());
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -164,13 +187,8 @@ int main() {
   DisplayAxis displayAxis = DisplayAxis::kPitch;
   AppMode appMode = AppMode::kGame;
   SteeringInputState steeringInput;
-  auto lastBeaconTime = std::chrono::steady_clock::time_point{};
-  bool hasEverReceivedPacket = false;
-  bool wasBroadcastingForLoss = false;
-  bool greenButtonGestureActive = false;
-  auto greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
-  bool redButtonWasDown = false;
-  int redButtonPressCount = 0;
+  DiscoveryBeaconState discovery;
+  RecenterGestureState recenterGesture;
   float cameraZoomScale = 1.0f;
   PauseMenuState pauseMenu;
   OpenPauseMenu(&pauseMenu);
@@ -192,7 +210,7 @@ int main() {
     if (!pauseMenu.active && appMode == AppMode::kGame && IsKeyPressed(KEY_E)) {
       roadArtEditor.active = !roadArtEditor.active;
       if (!roadArtEditor.active) {
-        SaveRoadArtTuning(roadArtTuningPath, roadArtTuning);
+        SaveRoadArtTuningWithLog(roadArtTuningPath, roadArtTuning);
       }
     }
     if (!pauseMenu.active && appMode == AppMode::kGame &&
@@ -235,7 +253,7 @@ int main() {
         changedRoadArtTuning = true;
       }
       if (changedRoadArtTuning) {
-        SaveRoadArtTuning(roadArtTuningPath, roadArtTuning);
+        SaveRoadArtTuningWithLog(roadArtTuningPath, roadArtTuning);
       }
     }
 
@@ -252,8 +270,8 @@ int main() {
     if (PollLatestSensorFrame(&receiver, &latestFrame)) {
       lastGoodFrame = latestFrame;
       lastPacketTime = std::chrono::steady_clock::now();
-      hasEverReceivedPacket = true;
-      wasBroadcastingForLoss = false;
+      discovery.hasEverReceivedPacket = true;
+      discovery.wasBroadcastingForLoss = false;
       RecordSensorFrameForSteering(lastGoodFrame, &steeringInput);
     }
 
@@ -273,19 +291,19 @@ int main() {
     UpdateKeyboardSteeringFallback(&steeringInput, keyboardDirection, hasFreshPackets, dt);
 
     const float secondsSinceBeacon =
-        lastBeaconTime == std::chrono::steady_clock::time_point{}
+        discovery.lastBeaconTime == std::chrono::steady_clock::time_point{}
             ? kServerBeaconIntervalSeconds
-            : std::chrono::duration<float>(now - lastBeaconTime).count();
+            : std::chrono::duration<float>(now - discovery.lastBeaconTime).count();
 
-    const bool shouldStartInitialBroadcast = !hasEverReceivedPacket;
+    const bool shouldStartInitialBroadcast = !discovery.hasEverReceivedPacket;
     const bool shouldStartLossBroadcast =
-        hasEverReceivedPacket && !hasFreshPackets &&
+        discovery.hasEverReceivedPacket && !hasFreshPackets &&
         std::chrono::duration<float>(now - lastPacketTime).count() >= kServerBeaconStartDelaySeconds;
     const bool shouldBroadcast = shouldStartInitialBroadcast || shouldStartLossBroadcast;
 
-    if (shouldStartLossBroadcast && !wasBroadcastingForLoss) {
-      lastBeaconTime = std::chrono::steady_clock::time_point{};
-      wasBroadcastingForLoss = true;
+    if (shouldStartLossBroadcast && !discovery.wasBroadcastingForLoss) {
+      discovery.lastBeaconTime = std::chrono::steady_clock::time_point{};
+      discovery.wasBroadcastingForLoss = true;
     }
 
     if (broadcastReady && shouldBroadcast && secondsSinceBeacon >= kServerBeaconIntervalSeconds) {
@@ -294,7 +312,7 @@ int main() {
                                 kServerDiscoveryPort);
       std::printf("Server discovery broadcast sent to UDP %d: %s\n", kServerDiscoveryPort,
                   kServerDiscoveryMessage);
-      lastBeaconTime = now;
+      discovery.lastBeaconTime = now;
     }
 
     const ControllerButtonState menuButtons =
@@ -341,57 +359,47 @@ int main() {
     }
 
     if (pauseChordDown) {
-      greenButtonGestureActive = false;
-      greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
-      redButtonPressCount = 0;
-      redButtonWasDown = menuButtons.red;
-    } else if (!pauseMenu.active && menuButtons.green && !greenButtonGestureActive) {
-      greenButtonGestureActive = true;
-      greenButtonGestureStartTime = now;
-      redButtonPressCount = 0;
-      redButtonWasDown = menuButtons.red;
+      ResetRecenterGesture(&recenterGesture);
+      recenterGesture.redWasDown = menuButtons.red;
+    } else if (!pauseMenu.active && menuButtons.green && !recenterGesture.active) {
+      recenterGesture.active = true;
+      recenterGesture.startedAt = now;
+      recenterGesture.redPressCount = 0;
+      recenterGesture.redWasDown = menuButtons.red;
       std::printf("Recenter gesture started. Hold green and press red %d times within %.1f seconds.\n",
                   kRecenterRedPressesRequired, kRecenterGestureWindowSeconds);
     }
 
-    if (!pauseMenu.active && greenButtonGestureActive) {
+    if (!pauseMenu.active && recenterGesture.active) {
       const float gestureElapsedSeconds =
-          std::chrono::duration<float>(now - greenButtonGestureStartTime).count();
+          std::chrono::duration<float>(now - recenterGesture.startedAt).count();
 
-      if (menuButtons.red && !redButtonWasDown) {
-        ++redButtonPressCount;
-        std::printf("Recenter gesture red press %d/%d.\n", redButtonPressCount,
+      if (menuButtons.red && !recenterGesture.redWasDown) {
+        ++recenterGesture.redPressCount;
+        std::printf("Recenter gesture red press %d/%d.\n", recenterGesture.redPressCount,
                     kRecenterRedPressesRequired);
       }
-      redButtonWasDown = menuButtons.red;
+      recenterGesture.redWasDown = menuButtons.red;
 
       if (!menuButtons.green) {
         std::printf("Recenter gesture cancelled: green released.\n");
-        greenButtonGestureActive = false;
-        greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
-        redButtonPressCount = 0;
-        redButtonWasDown = false;
+        ResetRecenterGesture(&recenterGesture);
       } else if (gestureElapsedSeconds > kRecenterGestureWindowSeconds) {
-        if (redButtonPressCount >= kRecenterRedPressesRequired) {
+        if (recenterGesture.redPressCount >= kRecenterRedPressesRequired) {
           ResetControllerCenter(lastGoodFrame, true, &steeringInput);
           std::printf("Controller center reset from green hold + red triple press gesture.\n");
         } else {
           std::printf("Recenter gesture timed out at %.2f seconds with %d/%d red presses.\n",
-                      gestureElapsedSeconds, redButtonPressCount, kRecenterRedPressesRequired);
+                      gestureElapsedSeconds, recenterGesture.redPressCount,
+                      kRecenterRedPressesRequired);
         }
-        greenButtonGestureActive = false;
-        greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
-        redButtonPressCount = 0;
-        redButtonWasDown = false;
+        ResetRecenterGesture(&recenterGesture);
       }
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
       ResetControllerCenter(lastGoodFrame, hasAnyPacket, &steeringInput);
-      greenButtonGestureActive = false;
-      greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
-      redButtonPressCount = 0;
-      redButtonWasDown = false;
+      ResetRecenterGesture(&recenterGesture);
     }
 
     const float sourceAngleDeg =
@@ -429,7 +437,8 @@ int main() {
     BeginDrawing();
     if (appMode == AppMode::kGame) {
       DrawGame(game, gameAssets, city, roadArtTuning, roadArtEditor, hasFreshPackets,
-               hasAnyPacket, wasBroadcastingForLoss, screenWidth, screenHeight, cameraZoomScale);
+               hasAnyPacket, discovery.wasBroadcastingForLoss, screenWidth, screenHeight,
+               cameraZoomScale);
       if (pauseMenu.active) {
         DrawPauseMenu(pauseMenu, game, appMode, localIpText, cameraZoomScale, screenWidth,
                       screenHeight);

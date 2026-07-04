@@ -137,6 +137,12 @@ To regenerate the current original art and sounds:
 python tools/generate_sounds.py
 ```
 
+To regenerate simple procedural placeholder art that uses the same filenames loaded by the game:
+
+```text
+python tools/generate_assets.py
+```
+
 Some art helper scripts live in `tools/`, including tile mirroring and road alpha processing.
 
 ## City CSV Format
