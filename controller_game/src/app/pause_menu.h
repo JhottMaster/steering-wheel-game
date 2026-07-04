@@ -8,8 +8,7 @@
 #include "../game/game_logic.h"
 
 constexpr float kPauseChordHoldSeconds = 3.0f;
-constexpr float kPauseMenuSteerThresholdDeg = 18.0f;
-constexpr float kPauseMenuSteerResetDeg = 8.0f;
+constexpr float kPauseMenuScrollStepDeg = 22.0f;
 
 enum class PauseMenuAction {
   kNone,
@@ -37,7 +36,9 @@ enum class PauseMenuItem {
 struct PauseMenuState {
   bool active = false;
   int selectedIndex = 0;
-  bool steerArmed = true;
+  bool hasLastSteeringAngle = false;
+  float lastSteeringAngleDeg = 0.0f;
+  float scrollRemainderDeg = 0.0f;
   bool greenWasDown = false;
   bool redWasDown = false;
   float pauseChordSeconds = 0.0f;
@@ -57,7 +58,9 @@ inline constexpr std::array<PauseMenuItem, 8> kPauseMenuItems = {
 inline void OpenPauseMenu(PauseMenuState* menu) {
   menu->active = true;
   menu->selectedIndex = 0;
-  menu->steerArmed = true;
+  menu->hasLastSteeringAngle = false;
+  menu->lastSteeringAngleDeg = 0.0f;
+  menu->scrollRemainderDeg = 0.0f;
   menu->greenWasDown = true;
   menu->redWasDown = true;
   menu->pauseChordSeconds = 0.0f;
@@ -65,7 +68,8 @@ inline void OpenPauseMenu(PauseMenuState* menu) {
 
 inline void ClosePauseMenu(PauseMenuState* menu) {
   menu->active = false;
-  menu->steerArmed = true;
+  menu->hasLastSteeringAngle = false;
+  menu->scrollRemainderDeg = 0.0f;
   menu->pauseChordSeconds = 0.0f;
 }
 
@@ -139,18 +143,22 @@ inline PauseMenuAction UpdatePauseMenu(PauseMenuState* menu, float steeringAngle
   const bool greenPressed = greenDown && !menu->greenWasDown;
   const bool redPressed = redDown && !menu->redWasDown;
 
-  if (std::fabs(steeringAngleDeg) <= kPauseMenuSteerResetDeg) {
-    menu->steerArmed = true;
+  if (!menu->hasLastSteeringAngle) {
+    menu->lastSteeringAngleDeg = steeringAngleDeg;
+    menu->hasLastSteeringAngle = true;
   }
-  if (menu->steerArmed && steeringAngleDeg >= kPauseMenuSteerThresholdDeg) {
-    menu->selectedIndex =
-        (menu->selectedIndex + 1) % static_cast<int>(kPauseMenuItems.size());
-    menu->steerArmed = false;
-  } else if (menu->steerArmed && steeringAngleDeg <= -kPauseMenuSteerThresholdDeg) {
-    menu->selectedIndex =
-        (menu->selectedIndex + static_cast<int>(kPauseMenuItems.size()) - 1) %
-        static_cast<int>(kPauseMenuItems.size());
-    menu->steerArmed = false;
+
+  menu->scrollRemainderDeg += steeringAngleDeg - menu->lastSteeringAngleDeg;
+  menu->lastSteeringAngleDeg = steeringAngleDeg;
+
+  const int itemCount = static_cast<int>(kPauseMenuItems.size());
+  while (menu->scrollRemainderDeg >= kPauseMenuScrollStepDeg) {
+    menu->selectedIndex = (menu->selectedIndex + 1) % itemCount;
+    menu->scrollRemainderDeg -= kPauseMenuScrollStepDeg;
+  }
+  while (menu->scrollRemainderDeg <= -kPauseMenuScrollStepDeg) {
+    menu->selectedIndex = (menu->selectedIndex + itemCount - 1) % itemCount;
+    menu->scrollRemainderDeg += kPauseMenuScrollStepDeg;
   }
 
   PauseMenuAction action = PauseMenuAction::kNone;

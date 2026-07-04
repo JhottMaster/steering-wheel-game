@@ -237,8 +237,7 @@ int main() {
         ReadControllerButtons(app.lastGoodFrame, hasFreshPackets);
     const bool pauseChordDown = menuButtons.green && menuButtons.red;
     const float pauseMenuSteeringAngleDeg =
-        hasAnyPacket ? GetWrappedGameWheelAngleDeg(app.lastGoodFrame, app.steeringInput) *
-                           kGameSteeringDirection
+        hasAnyPacket ? app.steeringInput.accumulatedGameAngleDeg * kGameSteeringDirection
                      : app.steeringInput.manualAngleDeg;
     const PauseMenuAction pauseMenuAction =
         UpdatePauseMenu(&app.pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,

@@ -138,14 +138,15 @@ void TestPauseMenuSteeringAndButtons() {
   GameState game;
   assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kResume);
 
-  assert(UpdatePauseMenu(&menu, kPauseMenuSteerThresholdDeg + 1.0f, false, false, 0.016f) ==
-         PauseMenuAction::kNone);
-  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kRestart);
-  assert(UpdatePauseMenu(&menu, kPauseMenuSteerThresholdDeg + 1.0f, false, false, 0.016f) ==
-         PauseMenuAction::kNone);
-  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kRestart);
   assert(UpdatePauseMenu(&menu, 0.0f, false, false, 0.016f) == PauseMenuAction::kNone);
-  assert(UpdatePauseMenu(&menu, 0.0f, true, false, 0.016f) == PauseMenuAction::kRestart);
+  assert(UpdatePauseMenu(&menu, kPauseMenuScrollStepDeg + 1.0f, false, false, 0.016f) ==
+         PauseMenuAction::kNone);
+  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kRestart);
+  assert(UpdatePauseMenu(&menu, kPauseMenuScrollStepDeg * 2.0f + 1.0f, false, false, 0.016f) ==
+         PauseMenuAction::kNone);
+  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kCenter);
+  assert(UpdatePauseMenu(&menu, kPauseMenuScrollStepDeg * 2.0f + 1.0f, true, false, 0.016f) ==
+         PauseMenuAction::kCenter);
   assert(GetPauseMenuItemLabel(PauseMenuItem::kToggleDriveMode, game, AppMode::kGame) ==
          std::string("Mode: Button Gas"));
 }
