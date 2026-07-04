@@ -3,6 +3,7 @@
 #include "../app/pause_menu.h"
 #include "../app/server_discovery.h"
 #include "../input/datagram_receive.h"
+#include "../input/recenter_gesture.h"
 #include "../input/sensor_receiver.h"
 #include "../input/steering_input.h"
 
@@ -186,6 +187,44 @@ void TestServerDiscoveryBeacon() {
                               packetTime + std::chrono::seconds(6), false);
   assert(broadcaster.sendCount == 2);
   assert(discovery.wasBroadcastingForLoss);
+}
+
+void TestRecenterGestureRequiresGreenAndThreeRedPresses() {
+  using Clock = std::chrono::steady_clock;
+  const Clock::time_point start = Clock::time_point{} + std::chrono::seconds(20);
+  RecenterGestureState gesture;
+
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, false}, false, false, start,
+                                false));
+  assert(gesture.active);
+
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, true}, false, false,
+                                start + std::chrono::milliseconds(100), false));
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, false}, false, false,
+                                start + std::chrono::milliseconds(200), false));
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, true}, false, false,
+                                start + std::chrono::milliseconds(300), false));
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, false}, false, false,
+                                start + std::chrono::milliseconds(400), false));
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, true}, false, false,
+                                start + std::chrono::milliseconds(500), false));
+  assert(gesture.redPressCount == 3);
+  assert(UpdateRecenterGesture(&gesture, ControllerButtonState{true, true}, false, false,
+                               start + std::chrono::seconds(2), false));
+  assert(!gesture.active);
+}
+
+void TestRecenterGestureCancelsOnGreenRelease() {
+  using Clock = std::chrono::steady_clock;
+  const Clock::time_point start = Clock::time_point{} + std::chrono::seconds(40);
+  RecenterGestureState gesture;
+
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{true, false}, false, false, start,
+                                false));
+  assert(gesture.active);
+  assert(!UpdateRecenterGesture(&gesture, ControllerButtonState{false, false}, false, false,
+                                start + std::chrono::milliseconds(100), false));
+  assert(!gesture.active);
 }
 
 void TestAutoDriveAdvancesCar() {
@@ -446,6 +485,8 @@ int main() {
   TestPauseMenuSteeringAndButtons();
   TestPauseChordOpensMenu();
   TestServerDiscoveryBeacon();
+  TestRecenterGestureRequiresGreenAndThreeRedPresses();
+  TestRecenterGestureCancelsOnGreenRelease();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestManualBrakeCanReverse();

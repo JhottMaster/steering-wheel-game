@@ -24,11 +24,11 @@ run: $(OUTPUT)
 test: $(TEST_OUTPUT)
 	./$(TEST_OUTPUT)
 
-$(OUTPUT): $(SRC) src/app/app_mode.h src/app/controller_buttons.h src/app/pause_menu.h src/app/performance_log.h src/app/server_discovery.h src/game/asset_paths.h src/game/city_map.h src/game/game_assets.h src/game/game_audio.h src/game/game_logic.h src/game/game_view.h src/game/road_art_tuning.h src/input/datagram_receive.h src/input/sensor_receiver.h src/input/steering_input.h src/views/hardware_test_view.h src/views/pause_menu_view.h src/platform/platform_linux.h
+$(OUTPUT): $(SRC) src/app/app_mode.h src/app/controller_buttons.h src/app/pause_menu.h src/app/performance_log.h src/app/server_discovery.h src/game/asset_paths.h src/game/city_map.h src/game/game_assets.h src/game/game_audio.h src/game/game_logic.h src/game/game_view.h src/game/road_art_tuning.h src/input/datagram_receive.h src/input/recenter_gesture.h src/input/sensor_receiver.h src/input/steering_input.h src/views/hardware_test_view.h src/views/pause_menu_view.h src/platform/platform_linux.h
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
 
-$(TEST_OUTPUT): $(TEST_SRC) src/app/app_mode.h src/app/pause_menu.h src/app/server_discovery.h src/game/city_map.h src/game/game_logic.h src/game/road_art_tuning.h src/input/datagram_receive.h src/input/sensor_receiver.h src/input/steering_input.h
+$(TEST_OUTPUT): $(TEST_SRC) src/app/app_mode.h src/app/pause_menu.h src/app/server_discovery.h src/game/city_map.h src/game/game_logic.h src/game/road_art_tuning.h src/input/datagram_receive.h src/input/recenter_gesture.h src/input/sensor_receiver.h src/input/steering_input.h
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
 

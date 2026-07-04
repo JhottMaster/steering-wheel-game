@@ -21,6 +21,7 @@
 #include "game/game_logic.h"
 #include "game/game_view.h"
 #include "game/road_art_tuning.h"
+#include "input/recenter_gesture.h"
 #include "input/sensor_receiver.h"
 #include "input/steering_input.h"
 #include "raylib.h"
@@ -36,15 +37,6 @@ constexpr float kGameSteeringDirection = -1.0f;
 constexpr float kCameraZoomMin = 0.15f;
 constexpr float kCameraZoomMax = 1.5f;
 constexpr float kCameraZoomStep = 1.25f;
-constexpr float kRecenterGestureWindowSeconds = 1.5f;
-constexpr int kRecenterRedPressesRequired = 3;
-
-struct RecenterGestureState {
-  bool active = false;
-  PerfClock::time_point startedAt = {};
-  bool redWasDown = false;
-  int redPressCount = 0;
-};
 
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
@@ -61,10 +53,6 @@ void PrintStartupWarnings(const char* label, const std::vector<std::string>& war
   for (const std::string& warning : warnings) {
     std::printf("[%s] %s\n", label, warning.c_str());
   }
-}
-
-void ResetRecenterGesture(RecenterGestureState* gesture) {
-  *gesture = RecenterGestureState{};
 }
 
 void SaveRoadArtTuningWithLog(const std::string& path, const RoadArtTuning& tuning) {
@@ -255,43 +243,9 @@ int main() {
         break;
     }
 
-    if (pauseChordDown) {
-      ResetRecenterGesture(&recenterGesture);
-      recenterGesture.redWasDown = menuButtons.red;
-    } else if (!pauseMenu.active && menuButtons.green && !recenterGesture.active) {
-      recenterGesture.active = true;
-      recenterGesture.startedAt = now;
-      recenterGesture.redPressCount = 0;
-      recenterGesture.redWasDown = menuButtons.red;
-      std::printf("Recenter gesture started. Hold green and press red %d times within %.1f seconds.\n",
-                  kRecenterRedPressesRequired, kRecenterGestureWindowSeconds);
-    }
-
-    if (!pauseMenu.active && recenterGesture.active) {
-      const float gestureElapsedSeconds =
-          std::chrono::duration<float>(now - recenterGesture.startedAt).count();
-
-      if (menuButtons.red && !recenterGesture.redWasDown) {
-        ++recenterGesture.redPressCount;
-        std::printf("Recenter gesture red press %d/%d.\n", recenterGesture.redPressCount,
-                    kRecenterRedPressesRequired);
-      }
-      recenterGesture.redWasDown = menuButtons.red;
-
-      if (!menuButtons.green) {
-        std::printf("Recenter gesture cancelled: green released.\n");
-        ResetRecenterGesture(&recenterGesture);
-      } else if (gestureElapsedSeconds > kRecenterGestureWindowSeconds) {
-        if (recenterGesture.redPressCount >= kRecenterRedPressesRequired) {
-          ResetControllerCenter(lastGoodFrame, true, &steeringInput);
-          std::printf("Controller center reset from green hold + red triple press gesture.\n");
-        } else {
-          std::printf("Recenter gesture timed out at %.2f seconds with %d/%d red presses.\n",
-                      gestureElapsedSeconds, recenterGesture.redPressCount,
-                      kRecenterRedPressesRequired);
-        }
-        ResetRecenterGesture(&recenterGesture);
-      }
+    if (UpdateRecenterGesture(&recenterGesture, menuButtons, pauseMenu.active, pauseChordDown,
+                              now)) {
+      ResetControllerCenter(lastGoodFrame, true, &steeringInput);
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
