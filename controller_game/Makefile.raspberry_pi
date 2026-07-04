@@ -28,7 +28,7 @@ $(OUTPUT): $(SRC) src/app/app_mode.h src/app/controller_buttons.h src/app/pause_
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(INCLUDES) $(SRC) $(LIBS) -o $(OUTPUT)
 
-$(TEST_OUTPUT): $(TEST_SRC) src/game/city_map.h src/game/game_logic.h src/game/road_art_tuning.h src/input/steering_input.h
+$(TEST_OUTPUT): $(TEST_SRC) src/app/app_mode.h src/app/pause_menu.h src/game/city_map.h src/game/game_logic.h src/game/road_art_tuning.h src/input/datagram_receive.h src/input/sensor_receiver.h src/input/steering_input.h
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(TEST_SRC) -o $(TEST_OUTPUT)
 

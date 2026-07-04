@@ -1,15 +1,46 @@
 #include "game_logic.h"
 #include "road_art_tuning.h"
+#include "../app/pause_menu.h"
+#include "../input/datagram_receive.h"
+#include "../input/sensor_receiver.h"
 #include "../input/steering_input.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <queue>
 #include <string>
 #include <vector>
 
 namespace {
+struct FakeDatagram {
+  DatagramReceiveStatus status = DatagramReceiveStatus::kWouldBlock;
+  std::string payload;
+};
+
+struct FakeReceiver {
+  std::queue<FakeDatagram> datagrams;
+
+  DatagramReceiveStatus ReceiveDatagram(char* buffer, int capacity, int* receivedBytes) {
+    if (datagrams.empty()) {
+      return DatagramReceiveStatus::kWouldBlock;
+    }
+
+    const FakeDatagram datagram = datagrams.front();
+    datagrams.pop();
+    if (datagram.status != DatagramReceiveStatus::kPacket) {
+      return datagram.status;
+    }
+
+    const int bytesToCopy = std::min(capacity, static_cast<int>(datagram.payload.size()));
+    std::copy(datagram.payload.begin(), datagram.payload.begin() + bytesToCopy, buffer);
+    *receivedBytes = bytesToCopy;
+    return DatagramReceiveStatus::kPacket;
+  }
+};
+
 SensorFrame MakePitchFrame(float degrees) {
   const float halfRadians = degrees * kGameDegToRad * 0.5f;
   return SensorFrame{SensorQuaternion{std::cos(halfRadians), 0.0f, std::sin(halfRadians), 0.0f},
@@ -26,6 +57,34 @@ void TestPacketParser() {
   assert(std::fabs(frame.orientation.z - 0.0f) < 0.001f);
   assert(frame.button1Pressed);
   assert(!frame.button2Pressed);
+}
+
+void TestSensorReceiverKeepsLatestValidPacket() {
+  FakeReceiver receiver;
+  receiver.datagrams.push(
+      FakeDatagram{DatagramReceiveStatus::kPacket,
+                   "qw=1.0,qx=0.0,qy=0.0,qz=0.0,button1=0,button2=0"});
+  receiver.datagrams.push(FakeDatagram{DatagramReceiveStatus::kPacket, "invalid"});
+  receiver.datagrams.push(
+      FakeDatagram{DatagramReceiveStatus::kPacket,
+                   "qw=0.5,qx=0.0,qy=0.5,qz=0.0,button1=1,button2=1"});
+  receiver.datagrams.push(FakeDatagram{DatagramReceiveStatus::kWouldBlock, ""});
+
+  SensorFrame frame;
+  assert(PollLatestSensorFrame(&receiver, &frame));
+  assert(std::fabs(frame.orientation.w - 0.5f) < 0.001f);
+  assert(std::fabs(frame.orientation.y - 0.5f) < 0.001f);
+  assert(frame.button1Pressed);
+  assert(frame.button2Pressed);
+}
+
+void TestSensorReceiverReturnsFalseWhenOnlyInvalidPacketsArrive() {
+  FakeReceiver receiver;
+  receiver.datagrams.push(FakeDatagram{DatagramReceiveStatus::kPacket, "invalid"});
+  receiver.datagrams.push(FakeDatagram{DatagramReceiveStatus::kWouldBlock, ""});
+
+  SensorFrame frame;
+  assert(!PollLatestSensorFrame(&receiver, &frame));
 }
 
 void TestCenteredPitchTwist() {
@@ -55,6 +114,35 @@ void TestKeyboardSteeringFallback() {
   steering.manualAngleDeg = 12.0f;
   UpdateKeyboardSteeringFallback(&steering, 1.0f, true, 0.1f);
   assert(steering.manualAngleDeg == 0.0f);
+}
+
+void TestPauseMenuSteeringAndButtons() {
+  PauseMenuState menu;
+  OpenPauseMenu(&menu);
+  GameState game;
+  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kResume);
+
+  assert(UpdatePauseMenu(&menu, kPauseMenuSteerThresholdDeg + 1.0f, false, false, 0.016f) ==
+         PauseMenuAction::kNone);
+  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kRestart);
+  assert(UpdatePauseMenu(&menu, kPauseMenuSteerThresholdDeg + 1.0f, false, false, 0.016f) ==
+         PauseMenuAction::kNone);
+  assert(GetSelectedPauseMenuItem(menu) == PauseMenuItem::kRestart);
+  assert(UpdatePauseMenu(&menu, 0.0f, false, false, 0.016f) == PauseMenuAction::kNone);
+  assert(UpdatePauseMenu(&menu, 0.0f, true, false, 0.016f) == PauseMenuAction::kRestart);
+  assert(GetPauseMenuItemLabel(PauseMenuItem::kToggleDriveMode, game, AppMode::kGame) ==
+         std::string("Mode: Button Gas"));
+}
+
+void TestPauseChordOpensMenu() {
+  PauseMenuState menu;
+  assert(!menu.active);
+  assert(UpdatePauseMenu(&menu, 0.0f, true, true, kPauseChordHoldSeconds * 0.5f) ==
+         PauseMenuAction::kNone);
+  assert(!menu.active);
+  assert(UpdatePauseMenu(&menu, 0.0f, true, true, kPauseChordHoldSeconds * 0.6f) ==
+         PauseMenuAction::kNone);
+  assert(menu.active);
 }
 
 void TestAutoDriveAdvancesCar() {
@@ -307,9 +395,13 @@ void TestReverseSteeringTurnsOppositeDirection() {
 
 int main() {
   TestPacketParser();
+  TestSensorReceiverKeepsLatestValidPacket();
+  TestSensorReceiverReturnsFalseWhenOnlyInvalidPacketsArrive();
   TestCenteredPitchTwist();
   TestSteeringInputWraparound();
   TestKeyboardSteeringFallback();
+  TestPauseMenuSteeringAndButtons();
+  TestPauseChordOpensMenu();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestManualBrakeCanReverse();
