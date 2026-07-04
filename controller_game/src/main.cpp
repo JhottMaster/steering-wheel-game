@@ -16,6 +16,7 @@
 #include "app/center_confirm.h"
 #include "app/controller_buttons.h"
 #include "app/frame_input.h"
+#include "app/menu_flow.h"
 #include "app/pause_menu.h"
 #include "app/performance_log.h"
 #include "app/server_discovery.h"
@@ -34,10 +35,6 @@
 
 namespace {
 constexpr int kUdpPort = 4210;
-constexpr float kCameraZoomMin = 0.15f;
-constexpr float kCameraZoomMax = 1.5f;
-constexpr float kCameraZoomStep = 1.25f;
-
 std::string JoinLocalIps(const std::vector<std::string>& addresses) {
   std::ostringstream joined;
   for (size_t i = 0; i < addresses.size(); ++i) {
@@ -173,68 +170,7 @@ int main() {
 
     UpdateServerDiscoveryBeacon(&app.discovery, &broadcaster, broadcastReady,
                                 input.hasFreshPackets, app.lastPacketTime, input.now);
-
-    const bool centerConfirmWasActive = app.centerConfirm.active;
-    const CenterConfirmAction centerConfirmAction =
-        UpdateCenterConfirm(&app.centerConfirm, input.menuButtons.green,
-                            input.menuButtons.red);
-    if (centerConfirmAction == CenterConfirmAction::kConfirm) {
-      ResetControllerCenter(app.lastGoodFrame, input.hasAnyPacket, &app.steeringInput);
-      CloseCenterConfirm(&app.centerConfirm);
-    } else if (centerConfirmAction == CenterConfirmAction::kCancel) {
-      CloseCenterConfirm(&app.centerConfirm);
-    }
-
-    const PauseMenuAction pauseMenuAction =
-        centerConfirmWasActive
-            ? PauseMenuAction::kNone
-            : UpdatePauseMenu(&app.pauseMenu, input.pauseMenuSteeringAngleDeg,
-                              input.menuButtons.green, input.menuButtons.red, input.dt);
-
-    switch (pauseMenuAction) {
-      case PauseMenuAction::kResume:
-        ClosePauseMenu(&app.pauseMenu);
-        break;
-      case PauseMenuAction::kRestart:
-        app.game = GameState{};
-        InitializeGameFromCity(&app.game, &app.city);
-        ClosePauseMenu(&app.pauseMenu);
-        break;
-      case PauseMenuAction::kCenter:
-        OpenCenterConfirm(&app.centerConfirm, input.menuButtons.green,
-                          input.menuButtons.red);
-        break;
-      case PauseMenuAction::kQuit:
-        app.shouldQuit = true;
-        break;
-      case PauseMenuAction::kToggleDriveMode:
-        ToggleDriveMode(&app.game);
-        break;
-      case PauseMenuAction::kToggleHardwareTest:
-        app.appMode = app.appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
-        ClosePauseMenu(&app.pauseMenu);
-        break;
-      case PauseMenuAction::kZoomIn:
-        app.cameraZoomScale =
-            std::min(kCameraZoomMax, app.cameraZoomScale * kCameraZoomStep);
-        break;
-      case PauseMenuAction::kZoomOut:
-        app.cameraZoomScale =
-            std::max(kCameraZoomMin, app.cameraZoomScale / kCameraZoomStep);
-        break;
-      case PauseMenuAction::kNone:
-        break;
-    }
-
-    if (UpdateRecenterGesture(&app.recenterGesture, input.menuButtons, app.pauseMenu.active,
-                              input.pauseChordDown, input.now)) {
-      ResetControllerCenter(app.lastGoodFrame, true, &app.steeringInput);
-    }
-
-    if (IsKeyPressed(KEY_SPACE)) {
-      ResetControllerCenter(app.lastGoodFrame, input.hasAnyPacket, &app.steeringInput);
-      ResetRecenterGesture(&app.recenterGesture);
-    }
+    UpdateMenusAndOverlays(&app, input);
 
     const auto updateStartTime = PerfClock::now();
     if (app.appMode == AppMode::kGame && !app.pauseMenu.active) {
