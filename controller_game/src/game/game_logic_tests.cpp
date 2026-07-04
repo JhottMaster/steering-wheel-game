@@ -1,5 +1,6 @@
 #include "game_logic.h"
 #include "road_art_tuning.h"
+#include "../input/steering_input.h"
 
 #include <cassert>
 #include <cmath>
@@ -9,6 +10,12 @@
 #include <vector>
 
 namespace {
+SensorFrame MakePitchFrame(float degrees) {
+  const float halfRadians = degrees * kGameDegToRad * 0.5f;
+  return SensorFrame{SensorQuaternion{std::cos(halfRadians), 0.0f, std::sin(halfRadians), 0.0f},
+                     false, false};
+}
+
 void TestPacketParser() {
   SensorFrame frame;
   assert(!ParsePacket("roll=1.0,pitch=2.0,heading=3.0", &frame));
@@ -27,6 +34,27 @@ void TestCenteredPitchTwist() {
   const SensorFrame turned = {SensorQuaternion{halfTurn, 0.0f, halfTurn, 0.0f}, false, false};
   const float twistDeg = GetCenteredAxisDegrees(OrientationAxis::kPitch, turned, center);
   assert(std::fabs(twistDeg - 90.0f) < 0.5f);
+}
+
+void TestSteeringInputWraparound() {
+  SteeringInputState steering;
+  ResetControllerCenter(MakePitchFrame(0.0f), true, &steering);
+  RecordSensorFrameForSteering(MakePitchFrame(170.0f), &steering);
+  assert(std::fabs(steering.accumulatedGameAngleDeg - 170.0f) < 0.5f);
+  RecordSensorFrameForSteering(MakePitchFrame(-170.0f), &steering);
+  assert(std::fabs(steering.accumulatedGameAngleDeg - 190.0f) < 0.5f);
+}
+
+void TestKeyboardSteeringFallback() {
+  SteeringInputState steering;
+  UpdateKeyboardSteeringFallback(&steering, 1.0f, false, 0.1f);
+  assert(steering.manualAngleDeg > 20.0f);
+  assert(steering.manualAngleDeg < kSteeringKeyboardFallbackFullLockDeg);
+  UpdateKeyboardSteeringFallback(&steering, 0.0f, false, 1.0f);
+  assert(steering.manualAngleDeg == 0.0f);
+  steering.manualAngleDeg = 12.0f;
+  UpdateKeyboardSteeringFallback(&steering, 1.0f, true, 0.1f);
+  assert(steering.manualAngleDeg == 0.0f);
 }
 
 void TestAutoDriveAdvancesCar() {
@@ -280,6 +308,8 @@ void TestReverseSteeringTurnsOppositeDirection() {
 int main() {
   TestPacketParser();
   TestCenteredPitchTwist();
+  TestSteeringInputWraparound();
+  TestKeyboardSteeringFallback();
   TestAutoDriveAdvancesCar();
   TestManualThrottleAndBrake();
   TestManualBrakeCanReverse();

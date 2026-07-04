@@ -20,6 +20,7 @@
 #include "game/game_view.h"
 #include "game/road_art_tuning.h"
 #include "input/sensor_receiver.h"
+#include "input/steering_input.h"
 #include "raylib.h"
 #include "views/hardware_test_view.h"
 #include "views/pause_menu_view.h"
@@ -30,13 +31,6 @@ constexpr int kServerDiscoveryPort = 4211;
 constexpr float kServerBeaconIntervalSeconds = 3.0f;
 constexpr float kServerBeaconStartDelaySeconds = 5.0f;
 constexpr float kVisibleAngleRangeDeg = 45.0f;
-constexpr float kGameSteeringDeadzoneDeg = 2.0f;
-constexpr float kGameSteeringDeadzoneBlendDeg = 8.0f;
-constexpr float kGameSteeringEarlyResponseFraction = 0.85f;
-constexpr float kGameSteeringEarlyRangeDeg = 90.0f;
-constexpr float kGameSteeringFullLockDeg = 270.0f;
-constexpr float kKeyboardSteeringResponsePerSecond = 220.0f;
-constexpr float kKeyboardSteeringReturnPerSecond = 280.0f;
 constexpr float kPacketTimeoutSeconds = 1.0f;
 constexpr float kDisplaySteeringDirection = -1.0f;
 constexpr float kGameSteeringDirection = -1.0f;
@@ -136,60 +130,6 @@ void PrintStartupWarnings(const char* label, const std::vector<std::string>& war
   }
 }
 
-float GetWrappedGameWheelAngleDeg(const SensorFrame& frame, const SensorFrame& centerFrame,
-                                  bool hasCenterFrame) {
-  return hasCenterFrame ? GetCenteredAxisDegrees(DisplayAxis::kPitch, frame, centerFrame)
-                        : GetAxisDegrees(DisplayAxis::kPitch, frame);
-}
-
-float ApplyGameSteeringResponseCurve(float wheelAngleDeg) {
-  const float sign = wheelAngleDeg < 0.0f ? -1.0f : 1.0f;
-  const float absoluteAngleDeg = std::fabs(wheelAngleDeg);
-  if (absoluteAngleDeg <= kGameSteeringDeadzoneDeg) {
-    return 0.0f;
-  }
-
-  const float deadzoneBlendEndDeg = kGameSteeringDeadzoneDeg + kGameSteeringDeadzoneBlendDeg;
-  float softenedAngleDeg = absoluteAngleDeg;
-  if (absoluteAngleDeg < deadzoneBlendEndDeg) {
-    const float t =
-        (absoluteAngleDeg - kGameSteeringDeadzoneDeg) / kGameSteeringDeadzoneBlendDeg;
-    const float smoothedT = t * t * (3.0f - 2.0f * t);
-    softenedAngleDeg = smoothedT * deadzoneBlendEndDeg;
-  }
-
-  const float clampedAngleDeg = std::min(softenedAngleDeg, kGameSteeringFullLockDeg);
-
-  if (clampedAngleDeg <= kGameSteeringEarlyRangeDeg) {
-    const float earlyFraction = clampedAngleDeg / kGameSteeringEarlyRangeDeg;
-    return sign * earlyFraction * kGameSteeringEarlyResponseFraction;
-  }
-
-  const float remainingAngleDeg = kGameSteeringFullLockDeg - kGameSteeringEarlyRangeDeg;
-  const float trailingFraction =
-      remainingAngleDeg <= 0.0f ? 1.0f
-                                : (clampedAngleDeg - kGameSteeringEarlyRangeDeg) / remainingAngleDeg;
-  const float normalized =
-      kGameSteeringEarlyResponseFraction +
-      trailingFraction * (1.0f - kGameSteeringEarlyResponseFraction);
-  return sign * normalized;
-}
-
-void ResetControllerCenter(const SensorFrame& lastGoodFrame, bool hasAnyPacket, SensorFrame* centerFrame,
-                           bool* hasCenterFrame, float* manualAngleDeg,
-                           float* gameAccumulatedAngleDeg, float* lastWrappedGameAngleDeg,
-                           bool* hasLastWrappedGameAngle) {
-  if (hasAnyPacket) {
-    *centerFrame = lastGoodFrame;
-    *hasCenterFrame = true;
-  } else {
-    *manualAngleDeg = 0.0f;
-    *hasCenterFrame = false;
-  }
-  *gameAccumulatedAngleDeg = 0.0f;
-  *lastWrappedGameAngleDeg = 0.0f;
-  *hasLastWrappedGameAngle = false;
-}
 }  // namespace
 
 int main() {
@@ -220,12 +160,10 @@ int main() {
   InitializeGameFromCity(&game, &city);
   SensorFrame latestFrame;
   SensorFrame lastGoodFrame;
-  SensorFrame centerFrame;
   auto lastPacketTime = std::chrono::steady_clock::time_point{};
   DisplayAxis displayAxis = DisplayAxis::kPitch;
   AppMode appMode = AppMode::kGame;
-  bool hasCenterFrame = false;
-  float manualAngleDeg = 0.0f;
+  SteeringInputState steeringInput;
   auto lastBeaconTime = std::chrono::steady_clock::time_point{};
   bool hasEverReceivedPacket = false;
   bool wasBroadcastingForLoss = false;
@@ -233,9 +171,6 @@ int main() {
   auto greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
   bool redButtonWasDown = false;
   int redButtonPressCount = 0;
-  float gameAccumulatedAngleDeg = 0.0f;
-  float lastWrappedGameAngleDeg = 0.0f;
-  bool hasLastWrappedGameAngle = false;
   float cameraZoomScale = 1.0f;
   PauseMenuState pauseMenu;
   OpenPauseMenu(&pauseMenu);
@@ -319,20 +254,7 @@ int main() {
       lastPacketTime = std::chrono::steady_clock::now();
       hasEverReceivedPacket = true;
       wasBroadcastingForLoss = false;
-      if (!hasCenterFrame) {
-        centerFrame = lastGoodFrame;
-        hasCenterFrame = true;
-      }
-
-      const float wrappedGameAngleDeg =
-          GetWrappedGameWheelAngleDeg(lastGoodFrame, centerFrame, hasCenterFrame);
-      if (!hasLastWrappedGameAngle) {
-        gameAccumulatedAngleDeg = wrappedGameAngleDeg;
-        hasLastWrappedGameAngle = true;
-      } else {
-        gameAccumulatedAngleDeg += WrapDegrees(wrappedGameAngleDeg - lastWrappedGameAngleDeg);
-      }
-      lastWrappedGameAngleDeg = wrappedGameAngleDeg;
+      RecordSensorFrameForSteering(lastGoodFrame, &steeringInput);
     }
 
     const float dt = GetFrameTime();
@@ -348,20 +270,7 @@ int main() {
             : static_cast<float>(IsKeyDown(KEY_LEFT)) - static_cast<float>(IsKeyDown(KEY_RIGHT));
     const float keyboardTravelDirection = game.carSpeed < 0.0f ? -1.0f : 1.0f;
     const float keyboardDirection = rawKeyboardDirection * keyboardTravelDirection;
-    if (!hasFreshPackets) {
-      const float targetManualAngleDeg = keyboardDirection * kVisibleAngleRangeDeg;
-      const float responsePerSecond =
-          keyboardDirection == 0.0f ? kKeyboardSteeringReturnPerSecond
-                                    : kKeyboardSteeringResponsePerSecond;
-      const float maxStepDeg = responsePerSecond * dt;
-      if (manualAngleDeg < targetManualAngleDeg) {
-        manualAngleDeg = std::min(manualAngleDeg + maxStepDeg, targetManualAngleDeg);
-      } else if (manualAngleDeg > targetManualAngleDeg) {
-        manualAngleDeg = std::max(manualAngleDeg - maxStepDeg, targetManualAngleDeg);
-      }
-    } else {
-      manualAngleDeg = 0.0f;
-    }
+    UpdateKeyboardSteeringFallback(&steeringInput, keyboardDirection, hasFreshPackets, dt);
 
     const float secondsSinceBeacon =
         lastBeaconTime == std::chrono::steady_clock::time_point{}
@@ -392,9 +301,9 @@ int main() {
         ReadControllerButtons(lastGoodFrame, hasFreshPackets);
     const bool pauseChordDown = menuButtons.green && menuButtons.red;
     const float pauseMenuSteeringAngleDeg =
-        hasAnyPacket ? GetWrappedGameWheelAngleDeg(lastGoodFrame, centerFrame, hasCenterFrame) *
+        hasAnyPacket ? GetWrappedGameWheelAngleDeg(lastGoodFrame, steeringInput) *
                            kGameSteeringDirection
-                     : manualAngleDeg;
+                     : steeringInput.manualAngleDeg;
     const PauseMenuAction pauseMenuAction =
         UpdatePauseMenu(&pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
                         menuButtons.red, dt);
@@ -409,9 +318,7 @@ int main() {
         ClosePauseMenu(&pauseMenu);
         break;
       case PauseMenuAction::kCenter:
-        ResetControllerCenter(lastGoodFrame, hasAnyPacket, &centerFrame, &hasCenterFrame,
-                              &manualAngleDeg, &gameAccumulatedAngleDeg, &lastWrappedGameAngleDeg,
-                              &hasLastWrappedGameAngle);
+        ResetControllerCenter(lastGoodFrame, hasAnyPacket, &steeringInput);
         break;
       case PauseMenuAction::kQuit:
         shouldQuit = true;
@@ -466,11 +373,7 @@ int main() {
         redButtonWasDown = false;
       } else if (gestureElapsedSeconds > kRecenterGestureWindowSeconds) {
         if (redButtonPressCount >= kRecenterRedPressesRequired) {
-          centerFrame = lastGoodFrame;
-          hasCenterFrame = true;
-          gameAccumulatedAngleDeg = 0.0f;
-          lastWrappedGameAngleDeg = 0.0f;
-          hasLastWrappedGameAngle = false;
+          ResetControllerCenter(lastGoodFrame, true, &steeringInput);
           std::printf("Controller center reset from green hold + red triple press gesture.\n");
         } else {
           std::printf("Recenter gesture timed out at %.2f seconds with %d/%d red presses.\n",
@@ -484,9 +387,7 @@ int main() {
     }
 
     if (IsKeyPressed(KEY_SPACE)) {
-      ResetControllerCenter(lastGoodFrame, hasAnyPacket, &centerFrame, &hasCenterFrame,
-                            &manualAngleDeg, &gameAccumulatedAngleDeg, &lastWrappedGameAngleDeg,
-                            &hasLastWrappedGameAngle);
+      ResetControllerCenter(lastGoodFrame, hasAnyPacket, &steeringInput);
       greenButtonGestureActive = false;
       greenButtonGestureStartTime = std::chrono::steady_clock::time_point{};
       redButtonPressCount = 0;
@@ -494,15 +395,16 @@ int main() {
     }
 
     const float sourceAngleDeg =
-        hasAnyPacket ? GetAxisDegrees(displayAxis, lastGoodFrame) : manualAngleDeg;
+        hasAnyPacket ? GetAxisDegrees(displayAxis, lastGoodFrame) : steeringInput.manualAngleDeg;
     const float centeredAngleDeg =
-        hasAnyPacket && hasCenterFrame
-            ? GetCenteredAxisDegrees(displayAxis, lastGoodFrame, centerFrame)
+        hasAnyPacket && steeringInput.hasCenterFrame
+            ? GetCenteredAxisDegrees(displayAxis, lastGoodFrame, steeringInput.centerFrame)
             : sourceAngleDeg;
     const float steeringAngleDeg = centeredAngleDeg * kDisplaySteeringDirection;
     const float normalizedValue = ClampUnit(steeringAngleDeg / kVisibleAngleRangeDeg);
 
-    const float gameSourceAngleDeg = hasAnyPacket ? gameAccumulatedAngleDeg : manualAngleDeg;
+    const float gameSourceAngleDeg =
+        hasAnyPacket ? steeringInput.accumulatedGameAngleDeg : steeringInput.manualAngleDeg;
     const float gameSteeringInput =
         ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
     const ControllerButtonState gameInputButtons =
