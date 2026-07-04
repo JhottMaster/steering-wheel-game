@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <string>
-#include <vector>
 
+#include "asset_paths.h"
 #include "game_logic.h"
 #include "raylib.h"
 
@@ -25,41 +25,59 @@ struct GameAudio {
 };
 
 namespace game_audio_detail {
-inline std::string FindAssetPath(const char* folder, const char* filename) {
-  const std::vector<std::string> candidates = {
-      std::string(folder) + "/" + filename,
-      std::string("controller_game/") + folder + "/" + filename,
-      std::string("../") + folder + "/" + filename,
-      std::string("../../") + folder + "/" + filename,
-  };
-
-  for (const std::string& candidate : candidates) {
-    if (FileExists(candidate.c_str())) {
-      return candidate;
-    }
-  }
-
-  return candidates.front();
-}
-
-inline std::string FindSoundPath(const char* filename) {
-  return FindAssetPath("assets/sounds", filename);
-}
-
 inline std::string FindFirstSoundPath(std::initializer_list<const char*> filenames) {
   for (const char* filename : filenames) {
-    const std::string candidate = FindSoundPath(filename);
+    const std::string candidate = game_asset_paths::FindSoundPath(filename);
     if (FileExists(candidate.c_str())) {
       return candidate;
     }
   }
 
-  return FindSoundPath(*filenames.begin());
+  return game_asset_paths::FindSoundPath(*filenames.begin());
 }
 
 inline Sound LoadOptionalSound(std::initializer_list<const char*> filenames, bool* loaded) {
   const std::string path = FindFirstSoundPath(filenames);
   if (!FileExists(path.c_str())) {
+    *loaded = false;
+    return {};
+  }
+
+  Sound sound = LoadSound(path.c_str());
+  *loaded = sound.stream.buffer != nullptr;
+  return sound;
+}
+
+inline Music LoadRequiredMusic(const char* filename, bool* loaded) {
+  const std::string path = game_asset_paths::FindSoundPath(filename);
+  if (!FileExists(path.c_str())) {
+    game_asset_paths::LogMissingAsset("sound", filename, path);
+    *loaded = false;
+    return {};
+  }
+
+  Music music = LoadMusicStream(path.c_str());
+  *loaded = music.stream.buffer != nullptr;
+  return music;
+}
+
+inline Music LoadFirstRequiredMusic(std::initializer_list<const char*> filenames, bool* loaded) {
+  const std::string path = FindFirstSoundPath(filenames);
+  if (!FileExists(path.c_str())) {
+    game_asset_paths::LogMissingAsset("sound", *filenames.begin(), path);
+    *loaded = false;
+    return {};
+  }
+
+  Music music = LoadMusicStream(path.c_str());
+  *loaded = music.stream.buffer != nullptr;
+  return music;
+}
+
+inline Sound LoadRequiredSound(const char* filename, bool* loaded) {
+  const std::string path = game_asset_paths::FindSoundPath(filename);
+  if (!FileExists(path.c_str())) {
+    game_asset_paths::LogMissingAsset("sound", filename, path);
     *loaded = false;
     return {};
   }
@@ -77,14 +95,11 @@ inline GameAudio LoadGameAudio() {
   }
 
   audio.ready = true;
-  audio.background =
-      LoadMusicStream(game_audio_detail::FindSoundPath("carpet_cruise_loop.wav").c_str());
-  audio.backgroundLoaded = audio.background.stream.buffer != nullptr;
-  audio.engine = LoadMusicStream(
-      game_audio_detail::FindFirstSoundPath({"engine_large.ogg", "toy_engine_loop.wav"}).c_str());
-  audio.engineLoaded = audio.engine.stream.buffer != nullptr;
-  audio.coin = LoadSound(game_audio_detail::FindSoundPath("coin_chime.wav").c_str());
-  audio.coinLoaded = audio.coin.stream.buffer != nullptr;
+  audio.background = game_audio_detail::LoadRequiredMusic("carpet_cruise_loop.wav",
+                                                          &audio.backgroundLoaded);
+  audio.engine = game_audio_detail::LoadFirstRequiredMusic({"engine_large.ogg", "toy_engine_loop.wav"},
+                                                           &audio.engineLoaded);
+  audio.coin = game_audio_detail::LoadRequiredSound("coin_chime.wav", &audio.coinLoaded);
   audio.krakenGrowl = game_audio_detail::LoadOptionalSound(
       {"silent_beast_growl.mp3", "kraken_growl.wav"}, &audio.krakenGrowlLoaded);
   audio.krakenSink = game_audio_detail::LoadOptionalSound(

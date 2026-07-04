@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
+#include "asset_paths.h"
 #include "city_map.h"
 #include "raylib.h"
 
@@ -37,37 +37,12 @@ inline bool TextureLoaded(Texture2D texture) {
 }
 
 namespace game_assets_detail {
-inline std::string FindAssetPath(const char* folder, const char* filename) {
-  const std::vector<std::string> candidates = {
-      std::string(folder) + "/" + filename,
-      std::string("controller_game/") + folder + "/" + filename,
-      std::string("../") + folder + "/" + filename,
-      std::string("../../") + folder + "/" + filename,
-  };
-
-  for (const std::string& candidate : candidates) {
-    if (FileExists(candidate.c_str())) {
-      return candidate;
-    }
-  }
-
-  return candidates.front();
-}
-
-inline std::string FindSpritePath(const char* filename) {
-  return FindAssetPath("assets/sprites", filename);
-}
-
-inline std::string FindCityPath(const char* filename) {
-  return FindAssetPath("assets/cities", filename);
-}
-
-inline std::string FindConfigPath(const char* filename) {
-  return FindAssetPath("assets/config", filename);
-}
-
 inline Texture2D LoadSpriteTexture(const char* filename, int filter = TEXTURE_FILTER_BILINEAR) {
-  Texture2D texture = LoadTexture(FindSpritePath(filename).c_str());
+  const std::string path = game_asset_paths::FindSpritePath(filename);
+  if (!FileExists(path.c_str())) {
+    game_asset_paths::LogMissingAsset("sprite", filename, path);
+  }
+  Texture2D texture = LoadTexture(path.c_str());
   if (TextureLoaded(texture)) {
     SetTextureFilter(texture, filter);
   }

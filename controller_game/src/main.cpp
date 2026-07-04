@@ -14,6 +14,7 @@
 #include "app/app_mode.h"
 #include "app/controller_buttons.h"
 #include "app/pause_menu.h"
+#include "game/asset_paths.h"
 #include "game/game_audio.h"
 #include "game/game_logic.h"
 #include "game/game_view.h"
@@ -200,8 +201,8 @@ int main() {
   InitAudioDevice();
 
   GameAssets gameAssets = LoadGameAssets();
-  CityMap city = LoadCityMap(game_assets_detail::FindCityPath("demo_city.csv"));
-  const std::string roadArtTuningPath = game_assets_detail::FindConfigPath("road_art_tuning.csv");
+  CityMap city = LoadCityMap(game_asset_paths::FindCityPath("demo_city.csv"));
+  const std::string roadArtTuningPath = game_asset_paths::FindConfigPath("road_art_tuning.csv");
   RoadArtTuning roadArtTuning = LoadRoadArtTuning(roadArtTuningPath);
   RoadArtEditorState roadArtEditor;
   GameAudio gameAudio = LoadGameAudio();
