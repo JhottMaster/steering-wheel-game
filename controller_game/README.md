@@ -251,6 +251,16 @@ This Pi build uses the same gameplay code, but switches to a fixed `1920x1080` c
 
 The Raspberry Pi makefile links `-latomic` because the Pi 3 toolchain may need it for raylib's audio code.
 
+At startup, the Pi build now performs a small network preflight before entering the frame loop. If it
+cannot find an active non-loopback IPv4 address or cannot open the UDP listener / broadcast socket, it
+logs a `[startup] ...` message to stdout and exits early instead of taking over the screen with a game
+session that cannot accept controller traffic.
+
+Keyboard fallback is still useful for the Windows desktop loop, but it should currently be treated as
+best-effort only on the Raspberry Pi `PLATFORM_DRM` build. The game code does poll raylib keyboard
+state on Pi too, but in practice the console build may not receive normal key events reliably even
+though kernel-level shortcuts such as `Ctrl` + `Alt` + `Del` still work.
+
 ## Remote Pi Deploy Loop
 
 For Windows-to-Pi development, run these scripts from the real Windows shell in `controller_game/`:
@@ -294,6 +304,24 @@ deploy_and_run_raspberry_pi.bat
 ```
 
 The stop script only runs the remote process stop step, which is useful when the Pi game is already running and you want the display back.
+
+For the persistent boot service on the Pi, the current stable setup is the plain `pablo` user service
+plus a small drop-in override:
+
+```ini
+[Unit]
+ConditionPathExists=!/boot/firmware/NO_GAME
+ConditionPathExists=!/boot/NO_GAME
+
+[Service]
+SupplementaryGroups=input video render
+ExecStartPre=/bin/sleep 5
+```
+
+That extra sleep gives Wi-Fi a moment to finish coming up during boot, and the `NO_GAME` sentinel file
+provides an easy escape hatch if you ever need the Pi to boot to the console without launching the game.
+Launching the service through `openvt` as root did attach it to `tty1`, but it was not worth the tradeoff,
+so the recommended setup remains the non-root service above.
 
 Create a local `raspberry_pi_config.bat` from `raspberry_pi_config.example.bat` and fill in your Pi host, username, remote path, and raylib path first:
 
