@@ -14,6 +14,7 @@
 #include "game/game_audio.h"
 #include "game/game_logic.h"
 #include "game/game_view.h"
+#include "game/road_art_tuning.h"
 #include "input/sensor_receiver.h"
 #include "raylib.h"
 #include "views/hardware_test_view.h"
@@ -29,10 +30,14 @@ constexpr float kGameSteeringDeadzoneBlendDeg = 8.0f;
 constexpr float kGameSteeringEarlyResponseFraction = 0.85f;
 constexpr float kGameSteeringEarlyRangeDeg = 90.0f;
 constexpr float kGameSteeringFullLockDeg = 270.0f;
-constexpr float kKeyboardStepPerSecond = 35.0f;
-constexpr float kPacketTimeoutSeconds = 2.0f;
+constexpr float kKeyboardSteeringResponsePerSecond = 220.0f;
+constexpr float kKeyboardSteeringReturnPerSecond = 280.0f;
+constexpr float kPacketTimeoutSeconds = 0.2f;
 constexpr float kDisplaySteeringDirection = -1.0f;
 constexpr float kGameSteeringDirection = -1.0f;
+constexpr float kCameraZoomMin = 0.15f;
+constexpr float kCameraZoomMax = 1.5f;
+constexpr float kCameraZoomStep = 1.25f;
 constexpr float kRecenterGestureWindowSeconds = 1.5f;
 constexpr int kRecenterRedPressesRequired = 3;
 constexpr char kServerDiscoveryMessage[] = "steering-wheel-server port=4210";
@@ -109,8 +114,12 @@ int main() {
 
   GameAssets gameAssets = LoadGameAssets();
   CityMap city = LoadCityMap(game_assets_detail::FindCityPath("demo_city.csv"));
+  const std::string roadArtTuningPath = game_assets_detail::FindConfigPath("road_art_tuning.csv");
+  RoadArtTuning roadArtTuning = LoadRoadArtTuning(roadArtTuningPath);
+  RoadArtEditorState roadArtEditor;
   GameAudio gameAudio = LoadGameAudio();
   GameState game;
+  InitializeGameFromCity(&game, &city);
   SensorFrame latestFrame;
   SensorFrame lastGoodFrame;
   SensorFrame centerFrame;
@@ -129,6 +138,7 @@ int main() {
   float gameAccumulatedAngleDeg = 0.0f;
   float lastWrappedGameAngleDeg = 0.0f;
   bool hasLastWrappedGameAngle = false;
+  float cameraZoomScale = 1.0f;
 
   while (!WindowShouldClose()) {
     if (platform::ShouldToggleFullscreen()) {
@@ -137,8 +147,54 @@ int main() {
     if (IsKeyPressed(KEY_T)) {
       appMode = appMode == AppMode::kGame ? AppMode::kHardwareTest : AppMode::kGame;
     }
-    if (appMode == AppMode::kGame && IsKeyPressed(KEY_ONE)) {
+    if (appMode == AppMode::kGame && IsKeyPressed(KEY_A)) {
       ToggleDriveMode(&game);
+    }
+    if (appMode == AppMode::kGame && IsKeyPressed(KEY_E)) {
+      roadArtEditor.active = !roadArtEditor.active;
+      if (!roadArtEditor.active) {
+        SaveRoadArtTuning(roadArtTuningPath, roadArtTuning);
+      }
+    }
+    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT))) {
+      cameraZoomScale = std::max(kCameraZoomMin, cameraZoomScale / kCameraZoomStep);
+    }
+    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD))) {
+      cameraZoomScale = std::min(kCameraZoomMax, cameraZoomScale * kCameraZoomStep);
+    }
+    if (appMode == AppMode::kGame && (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0))) {
+      cameraZoomScale = 1.0f;
+    }
+    if (appMode == AppMode::kGame && roadArtEditor.active) {
+      if (IsKeyPressed(KEY_GRAVE)) {
+        roadArtEditor.selectingAsset = !roadArtEditor.selectingAsset;
+      }
+      if (IsKeyPressed(KEY_UP)) {
+        if (roadArtEditor.selectingAsset) {
+          AdjustRoadArtEditorSprite(&roadArtEditor, -1);
+        } else {
+          roadArtEditor.fieldIndex = (roadArtEditor.fieldIndex + 5) % 6;
+        }
+      }
+      if (IsKeyPressed(KEY_DOWN)) {
+        if (roadArtEditor.selectingAsset) {
+          AdjustRoadArtEditorSprite(&roadArtEditor, 1);
+        } else {
+          roadArtEditor.fieldIndex = (roadArtEditor.fieldIndex + 1) % 6;
+        }
+      }
+      bool changedRoadArtTuning = false;
+      if (IsKeyPressed(KEY_RIGHT)) {
+        AdjustRoadArtEditorValue(&roadArtTuning, roadArtEditor, 1);
+        changedRoadArtTuning = true;
+      }
+      if (IsKeyPressed(KEY_LEFT)) {
+        AdjustRoadArtEditorValue(&roadArtTuning, roadArtEditor, -1);
+        changedRoadArtTuning = true;
+      }
+      if (changedRoadArtTuning) {
+        SaveRoadArtTuning(roadArtTuningPath, roadArtTuning);
+      }
     }
 
     if (appMode == AppMode::kHardwareTest && IsKeyPressed(KEY_R)) {
@@ -173,17 +229,32 @@ int main() {
     }
 
     const float dt = GetFrameTime();
-    const float keyboardDirection = static_cast<float>(IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) -
-                                    static_cast<float>(IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D));
-    if (keyboardDirection != 0.0f) {
-      manualAngleDeg += keyboardDirection * kKeyboardStepPerSecond * dt;
-    }
-    manualAngleDeg = std::clamp(manualAngleDeg, -kVisibleAngleRangeDeg, kVisibleAngleRangeDeg);
-
     const auto now = std::chrono::steady_clock::now();
     const float secondsSincePacket = std::chrono::duration<float>(now - lastPacketTime).count();
     const bool hasFreshPackets = secondsSincePacket <= kPacketTimeoutSeconds;
     const bool hasAnyPacket = lastPacketTime != std::chrono::steady_clock::time_point{};
+    const bool roadArtEditorConsumesArrows = appMode == AppMode::kGame && roadArtEditor.active;
+    const float rawKeyboardDirection =
+        roadArtEditorConsumesArrows
+            ? 0.0f
+            : static_cast<float>(IsKeyDown(KEY_LEFT)) - static_cast<float>(IsKeyDown(KEY_RIGHT));
+    const float keyboardTravelDirection = game.carSpeed < 0.0f ? -1.0f : 1.0f;
+    const float keyboardDirection = rawKeyboardDirection * keyboardTravelDirection;
+    if (!hasFreshPackets) {
+      const float targetManualAngleDeg = keyboardDirection * kVisibleAngleRangeDeg;
+      const float responsePerSecond =
+          keyboardDirection == 0.0f ? kKeyboardSteeringReturnPerSecond
+                                    : kKeyboardSteeringResponsePerSecond;
+      const float maxStepDeg = responsePerSecond * dt;
+      if (manualAngleDeg < targetManualAngleDeg) {
+        manualAngleDeg = std::min(manualAngleDeg + maxStepDeg, targetManualAngleDeg);
+      } else if (manualAngleDeg > targetManualAngleDeg) {
+        manualAngleDeg = std::max(manualAngleDeg - maxStepDeg, targetManualAngleDeg);
+      }
+    } else {
+      manualAngleDeg = 0.0f;
+    }
+
     const float secondsSinceBeacon =
         lastBeaconTime == std::chrono::steady_clock::time_point{}
             ? kServerBeaconIntervalSeconds
@@ -291,12 +362,12 @@ int main() {
         ClampUnit(ApplyGameSteeringResponseCurve(gameSourceAngleDeg * kGameSteeringDirection));
     const GameButtons gameButtons = {
         (hasFreshPackets && lastGoodFrame.button1Pressed) ||
-            (!hasFreshPackets && (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))),
+            (!roadArtEditorConsumesArrows && IsKeyDown(KEY_UP)),
         (hasFreshPackets && lastGoodFrame.button2Pressed) ||
-            (!hasFreshPackets && (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S))),
+            (!roadArtEditorConsumesArrows && IsKeyDown(KEY_DOWN)),
     };
     if (appMode == AppMode::kGame) {
-      UpdateGame(&game, gameSteeringInput, gameButtons, dt, city.visuals.empty());
+      UpdateGame(&game, gameSteeringInput, gameButtons, dt, &city);
     }
     UpdateGameAudio(&gameAudio, game, appMode == AppMode::kGame);
 
@@ -305,8 +376,9 @@ int main() {
 
     BeginDrawing();
     if (appMode == AppMode::kGame) {
-      DrawGame(game, gameAssets, city, hasFreshPackets, hasAnyPacket, wasBroadcastingForLoss,
-               localIpText, screenWidth, screenHeight);
+      DrawGame(game, gameAssets, city, roadArtTuning, roadArtEditor, hasFreshPackets,
+               hasAnyPacket, wasBroadcastingForLoss, localIpText, screenWidth, screenHeight,
+               cameraZoomScale);
       EndDrawing();
       continue;
     }

@@ -1,0 +1,8 @@
+sprite,scale_percent,footprint_percent,offset_x,offset_y,anchor_x,anchor_y,draw_mode
+road_horizontal,29,100,0,-7,0,0,repeat_horizontal
+road_vertical,36,100,0,0,0,0,repeat_vertical
+road_intersection,100,140,0,0,0,0,stretch
+road_curve_bottom_right,80,99,6,60,1,-1,stretch
+road_curve_bottom_left,75,100,0,0,-1,1,stretch
+road_curve_top_right,90,89,7,0,1,-2,stretch
+road_curve_top_left,89,90,-6,-25,-1,-1,stretch

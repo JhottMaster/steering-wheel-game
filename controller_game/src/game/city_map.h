@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
-constexpr float kCityTileSize = 512.0f;
+constexpr float kCityAuthoringTileSize = 512.0f;
+constexpr float kCityTileSize = 256.0f;
+constexpr float kCityAuthoringToWorldScale = kCityTileSize / kCityAuthoringTileSize;
 
 enum class CitySprite {
   kRoadHorizontal,
@@ -30,6 +32,16 @@ enum class CitySprite {
   kBuildingLibrary,
 };
 
+enum class CityRoadKind {
+  kHorizontal,
+  kVertical,
+  kIntersection,
+  kCurveBottomRight,
+  kCurveBottomLeft,
+  kCurveTopRight,
+  kCurveTopLeft,
+};
+
 struct CityVisual {
   CitySprite sprite = CitySprite::kRoadHorizontal;
   float x = 0.0f;
@@ -39,10 +51,37 @@ struct CityVisual {
   float rotationDeg = 0.0f;
 };
 
+struct CityRoadTile {
+  CityRoadKind kind = CityRoadKind::kHorizontal;
+  int column = 0;
+  int row = 0;
+};
+
+struct CityCoin {
+  float x = 0.0f;
+  float y = 0.0f;
+  bool collected = false;
+  float collectAnimationSeconds = 0.0f;
+};
+
+struct CityObstacle {
+  float x = 0.0f;
+  float y = 0.0f;
+  float width = 0.0f;
+  float height = 0.0f;
+  bool circle = false;
+};
+
 struct CityMap {
   int columns = 0;
   int rows = 0;
+  bool hasPlayerSpawn = false;
+  float playerSpawnX = kCityTileSize * 0.5f;
+  float playerSpawnY = kCityTileSize * 0.5f;
   std::vector<CityVisual> visuals;
+  std::vector<CityRoadTile> roads;
+  std::vector<CityCoin> coins;
+  std::vector<CityObstacle> obstacles;
 };
 
 namespace city_map_detail {
@@ -76,11 +115,15 @@ inline float ParseFloatOrDefault(const std::string& value, float fallback) {
   return end == value.c_str() ? fallback : parsed;
 }
 
+inline float AuthoringToWorld(float value) {
+  return value * kCityAuthoringToWorldScale;
+}
+
 inline void ParseOffsetAndScale(const std::string& token, std::string* name, float* offsetX,
                                 float* offsetY, float* scale) {
   *name = token;
-  *offsetX = kCityTileSize * 0.5f;
-  *offsetY = kCityTileSize * 0.5f;
+  *offsetX = kCityAuthoringTileSize * 0.5f;
+  *offsetY = kCityAuthoringTileSize * 0.5f;
   *scale = 1.0f;
 
   const size_t at = name->find('@');
@@ -104,34 +147,60 @@ inline void ParseOffsetAndScale(const std::string& token, std::string* name, flo
   }
 }
 
-inline bool TryAddRoadVisual(const std::string& token, int column, int row,
-                             std::vector<CityVisual>* visuals) {
+inline bool TryAddRoad(const std::string& token, int column, int row, CityMap* city) {
   CitySprite sprite = CitySprite::kRoadHorizontal;
+  CityRoadKind kind = CityRoadKind::kHorizontal;
   if (token == "r_h") {
     sprite = CitySprite::kRoadHorizontal;
+    kind = CityRoadKind::kHorizontal;
   } else if (token == "r_v") {
     sprite = CitySprite::kRoadVertical;
+    kind = CityRoadKind::kVertical;
   } else if (token == "r_x") {
     sprite = CitySprite::kRoadIntersection;
+    kind = CityRoadKind::kIntersection;
   } else if (token == "r_br") {
     sprite = CitySprite::kRoadCurveBottomRight;
+    kind = CityRoadKind::kCurveBottomRight;
   } else if (token == "r_bl") {
     sprite = CitySprite::kRoadCurveBottomLeft;
+    kind = CityRoadKind::kCurveBottomLeft;
   } else if (token == "r_tr") {
     sprite = CitySprite::kRoadCurveTopRight;
+    kind = CityRoadKind::kCurveTopRight;
   } else if (token == "r_tl") {
     sprite = CitySprite::kRoadCurveTopLeft;
+    kind = CityRoadKind::kCurveTopLeft;
   } else {
     return false;
   }
 
-  visuals->push_back(CityVisual{sprite, column * kCityTileSize, row * kCityTileSize,
-                                kCityTileSize, kCityTileSize, 0.0f});
+  city->visuals.push_back(CityVisual{sprite, column * kCityTileSize, row * kCityTileSize,
+                                     kCityTileSize, kCityTileSize, 0.0f});
+  city->roads.push_back(CityRoadTile{kind, column, row});
   return true;
 }
 
-inline bool TryAddObjectVisual(const std::string& token, int column, int row,
-                               std::vector<CityVisual>* visuals) {
+inline void AddCenteredVisual(CityMap* city, CitySprite sprite, float centerX, float centerY,
+                              float size) {
+  city->visuals.push_back(
+      CityVisual{sprite, centerX - size * 0.5f, centerY - size * 0.5f, size, size, 0.0f});
+}
+
+inline void AddRectObstacle(CityMap* city, float centerX, float centerY, float size,
+                            float widthFraction, float heightFraction) {
+  const float width = size * widthFraction;
+  const float height = size * heightFraction;
+  city->obstacles.push_back(
+      CityObstacle{centerX - width * 0.5f, centerY - height * 0.5f, width, height, false});
+}
+
+inline void AddCircleObstacle(CityMap* city, float centerX, float centerY, float diameter) {
+  city->obstacles.push_back(
+      CityObstacle{centerX - diameter * 0.5f, centerY - diameter * 0.5f, diameter, diameter, true});
+}
+
+inline bool TryAddObject(const std::string& token, int column, int row, CityMap* city) {
   std::string name;
   float offsetX = 0.0f;
   float offsetY = 0.0f;
@@ -140,9 +209,11 @@ inline bool TryAddObjectVisual(const std::string& token, int column, int row,
 
   CitySprite sprite = CitySprite::kCoinStar;
   float size = 120.0f;
+  const float centerX = column * kCityTileSize + city_map_detail::AuthoringToWorld(offsetX);
+  const float centerY = row * kCityTileSize + city_map_detail::AuthoringToWorld(offsetY);
   if (name == "coin:star") {
-    sprite = CitySprite::kCoinStar;
-    size = 74.0f;
+    city->coins.push_back(CityCoin{centerX, centerY, false, 0.0f});
+    return true;
   } else if (name == "tree:round") {
     sprite = CitySprite::kTreeRound;
     size = 230.0f;
@@ -170,15 +241,24 @@ inline bool TryAddObjectVisual(const std::string& token, int column, int row,
   } else if (name == "library") {
     sprite = CitySprite::kBuildingLibrary;
     size = 390.0f;
-  } else if (name.rfind("spawn:", 0) == 0 || name == "grass") {
+  } else if (name == "spawn:player") {
+    city->hasPlayerSpawn = true;
+    city->playerSpawnX = centerX;
+    city->playerSpawnY = centerY;
+    return true;
+  } else if (name == "grass") {
     return true;
   } else {
     return false;
   }
 
-  size *= scale;
-  visuals->push_back(CityVisual{sprite, column * kCityTileSize + offsetX - size * 0.5f,
-                                row * kCityTileSize + offsetY - size * 0.5f, size, size, 0.0f});
+  size *= scale * kCityAuthoringToWorldScale;
+  AddCenteredVisual(city, sprite, centerX, centerY, size);
+  if (name == "tree:round" || name == "tree:evergreen" || name == "bush") {
+    AddCircleObstacle(city, centerX, centerY, size * 0.58f);
+  } else {
+    AddRectObstacle(city, centerX, centerY, size, 0.70f, 0.62f);
+  }
   return true;
 }
 }  // namespace city_map_detail
@@ -200,8 +280,8 @@ inline CityMap LoadCityMap(const std::string& path) {
         if (token.empty() || token == "grass") {
           continue;
         }
-        if (!city_map_detail::TryAddRoadVisual(token, column, row, &city.visuals)) {
-          city_map_detail::TryAddObjectVisual(token, column, row, &city.visuals);
+        if (!city_map_detail::TryAddRoad(token, column, row, &city)) {
+          city_map_detail::TryAddObject(token, column, row, &city);
         }
       }
     }

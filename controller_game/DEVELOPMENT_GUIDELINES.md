@@ -41,4 +41,7 @@ These notes capture the project shape we want to preserve while iterating quickl
 - Treat the CSV as a visual grid: row is map `Y`, column is map `X`, and each cell is a pipe-separated stack of tokens.
 - Empty cells mean plain tiled carpet background; do not require a `grass` token.
 - Prefer compact readable map tokens such as `r_h`, `r_v`, `r_x`, `coin:star`, and `tree:round@x:y`.
-- Use the parsed city data for gameplay semantics later; avoid runtime collision behavior based on rendered sprite alpha pixels.
+- Use the parsed city data for gameplay semantics; avoid runtime collision behavior based on rendered sprite alpha pixels.
+- Roads should own simple drivable geometry, and props/buildings should own approximate collision shapes tuned for feel.
+- Keep road visual tuning first-class and separate from gameplay geometry. Per-piece road art scale, footprint scale, offsets, anchor edges, and draw modes belong in `assets/config/road_art_tuning.csv`, with parsing/editor behavior in `src/game/road_art_tuning.h`.
+- Keep road curve asset filenames aligned with their semantic enum/token direction; `road_curve_bottom_left.png` should be the asset loaded for `CitySprite::kRoadCurveBottomLeft` / `r_bl`.

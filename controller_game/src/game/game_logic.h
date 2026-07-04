@@ -5,13 +5,18 @@
 #include <cmath>
 #include <cstdio>
 
+#include "city_map.h"
+
 constexpr float kGameMapSize = 1024.0f;
 constexpr float kGameCarStartX = 512.0f;
 constexpr float kGameCarStartY = 760.0f;
 constexpr float kGameCarMargin = 48.0f;
+constexpr float kGameCarCollisionRadius = 30.0f;
 constexpr float kGameAutoSpeed = 95.0f;
 constexpr float kGameMaxSpeed = 190.0f;
 constexpr float kGameMaxReverseSpeed = 110.0f;
+constexpr float kGameOffroadMaxSpeed = 72.0f;
+constexpr float kGameOffroadDrag = 120.0f;
 constexpr float kGameManualCoastDrag = 55.0f;
 constexpr float kGameManualAcceleration = 165.0f;
 constexpr float kGameManualBrake = 245.0f;
@@ -19,9 +24,13 @@ constexpr float kGameManualReverseAcceleration = 135.0f;
 constexpr float kGameManualReverseEngageDelaySeconds = 1.0f;
 constexpr float kGameStoppedSpeedThreshold = 4.0f;
 constexpr float kGameMaxTurnRateDegPerSecond = 135.0f;
+constexpr float kGameMaxVisualWheelTurnDeg = 32.0f;
 constexpr float kGameCoinPickupRadius = 58.0f;
+constexpr float kGameCoinCollectAnimationSeconds = 0.42f;
 constexpr float kGameDegToRad = 0.017453292519943295769f;
 constexpr float kGameRadToDeg = 57.295779513082320876f;
+constexpr float kCityRoadHalfWidth = kCityTileSize * 0.25f;
+constexpr float kCityCurveRoadRadius = kCityTileSize * 0.5f;
 
 struct SensorQuaternion {
   float w = 1.0f;
@@ -65,10 +74,13 @@ struct GameButtons {
 struct GameState {
   GameVec2 carPosition = {kGameCarStartX, kGameCarStartY};
   float carHeadingDeg = 0.0f;
+  float visualWheelTurnDeg = 0.0f;
   float carSpeed = kGameAutoSpeed;
   float stoppedHoldSeconds = 0.0f;
   DriveMode driveMode = DriveMode::kAuto;
   int score = 0;
+  bool onRoad = true;
+  bool hitObstacle = false;
   std::array<CoinState, 8> coins = {{
       {{188.0f, 182.0f}, false},
       {{460.0f, 160.0f}, false},
@@ -80,6 +92,35 @@ struct GameState {
       {{738.0f, 820.0f}, false},
   }};
 };
+
+inline bool HasCityGameplay(const CityMap* city) {
+  return city != nullptr && city->columns > 0 && city->rows > 0;
+}
+
+inline float CityMapWidth(const CityMap& city) {
+  return std::max(1, city.columns) * kCityTileSize;
+}
+
+inline float CityMapHeight(const CityMap& city) {
+  return std::max(1, city.rows) * kCityTileSize;
+}
+
+inline void InitializeGameFromCity(GameState* game, CityMap* city) {
+  if (!HasCityGameplay(city)) {
+    return;
+  }
+
+  if (city->hasPlayerSpawn) {
+    game->carPosition = GameVec2{city->playerSpawnX, city->playerSpawnY};
+  }
+  game->score = 0;
+  game->onRoad = true;
+  game->hitObstacle = false;
+  for (CityCoin& coin : city->coins) {
+    coin.collected = false;
+    coin.collectAnimationSeconds = 0.0f;
+  }
+}
 
 inline bool ParsePacket(const char* packet, SensorFrame* frame) {
   float qw = 1.0f;
@@ -236,6 +277,77 @@ inline float DistanceSquared(GameVec2 a, GameVec2 b) {
   return dx * dx + dy * dy;
 }
 
+inline float DistanceSquared(float ax, float ay, float bx, float by) {
+  const float dx = ax - bx;
+  const float dy = ay - by;
+  return dx * dx + dy * dy;
+}
+
+inline bool PointInRect(float x, float y, float rectX, float rectY, float width, float height) {
+  return x >= rectX && x <= rectX + width && y >= rectY && y <= rectY + height;
+}
+
+inline bool CityRoadTileContainsPoint(const CityRoadTile& road, float worldX, float worldY) {
+  const float tileX = road.column * kCityTileSize;
+  const float tileY = road.row * kCityTileSize;
+  const float localX = worldX - tileX;
+  const float localY = worldY - tileY;
+  if (!PointInRect(localX, localY, 0.0f, 0.0f, kCityTileSize, kCityTileSize)) {
+    return false;
+  }
+
+  const float center = kCityTileSize * 0.5f;
+  const float inner = kCityCurveRoadRadius - kCityRoadHalfWidth;
+  const float outer = kCityCurveRoadRadius + kCityRoadHalfWidth;
+  switch (road.kind) {
+    case CityRoadKind::kHorizontal:
+      return std::fabs(localY - center) <= kCityRoadHalfWidth;
+    case CityRoadKind::kVertical:
+      return std::fabs(localX - center) <= kCityRoadHalfWidth;
+    case CityRoadKind::kIntersection:
+      return std::fabs(localY - center) <= kCityRoadHalfWidth ||
+             std::fabs(localX - center) <= kCityRoadHalfWidth;
+    case CityRoadKind::kCurveBottomRight: {
+      const float distanceSq = DistanceSquared(localX, localY, kCityTileSize, kCityTileSize);
+      return distanceSq >= inner * inner && distanceSq <= outer * outer;
+    }
+    case CityRoadKind::kCurveBottomLeft: {
+      const float distanceSq = DistanceSquared(localX, localY, 0.0f, kCityTileSize);
+      return distanceSq >= inner * inner && distanceSq <= outer * outer;
+    }
+    case CityRoadKind::kCurveTopRight: {
+      const float distanceSq = DistanceSquared(localX, localY, kCityTileSize, 0.0f);
+      return distanceSq >= inner * inner && distanceSq <= outer * outer;
+    }
+    case CityRoadKind::kCurveTopLeft: {
+      const float distanceSq = DistanceSquared(localX, localY, 0.0f, 0.0f);
+      return distanceSq >= inner * inner && distanceSq <= outer * outer;
+    }
+  }
+
+  return false;
+}
+
+inline bool IsPointOnCityRoad(const CityMap& city, GameVec2 point) {
+  for (const CityRoadTile& road : city.roads) {
+    if (CityRoadTileContainsPoint(road, point.x, point.y)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool IsCarOnCityRoad(const CityMap& city, const GameState& game) {
+  const float headingRad = game.carHeadingDeg * kGameDegToRad;
+  const GameVec2 forward = {std::sin(headingRad), -std::cos(headingRad)};
+  const GameVec2 front = {game.carPosition.x + forward.x * 28.0f,
+                          game.carPosition.y + forward.y * 28.0f};
+  const GameVec2 rear = {game.carPosition.x - forward.x * 26.0f,
+                         game.carPosition.y - forward.y * 26.0f};
+  return IsPointOnCityRoad(city, game.carPosition) || IsPointOnCityRoad(city, front) ||
+         IsPointOnCityRoad(city, rear);
+}
+
 inline void CollectNearbyCoins(GameState* game) {
   const float pickupDistanceSq = kGameCoinPickupRadius * kGameCoinPickupRadius;
   for (CoinState& coin : game->coins) {
@@ -244,6 +356,107 @@ inline void CollectNearbyCoins(GameState* game) {
       ++game->score;
     }
   }
+}
+
+inline void CollectNearbyCityCoins(GameState* game, CityMap* city) {
+  const float pickupDistanceSq = kGameCoinPickupRadius * kGameCoinPickupRadius;
+  game->score = 0;
+  for (CityCoin& coin : city->coins) {
+    if (!coin.collected &&
+        DistanceSquared(game->carPosition.x, game->carPosition.y, coin.x, coin.y) <=
+            pickupDistanceSq) {
+      coin.collected = true;
+      coin.collectAnimationSeconds = 0.0f;
+    }
+    if (coin.collected) {
+      ++game->score;
+    }
+  }
+}
+
+inline void UpdateCityCoinAnimations(CityMap* city, float dt) {
+  for (CityCoin& coin : city->coins) {
+    if (coin.collected && coin.collectAnimationSeconds < kGameCoinCollectAnimationSeconds) {
+      coin.collectAnimationSeconds =
+          std::min(kGameCoinCollectAnimationSeconds, coin.collectAnimationSeconds + dt);
+    }
+  }
+}
+
+inline bool ResolveCircleVsCircle(float* x, float* y, float carRadius,
+                                  const CityObstacle& obstacle) {
+  const float obstacleRadius = obstacle.width * 0.5f;
+  const float obstacleCenterX = obstacle.x + obstacleRadius;
+  const float obstacleCenterY = obstacle.y + obstacleRadius;
+  float dx = *x - obstacleCenterX;
+  float dy = *y - obstacleCenterY;
+  float distanceSq = dx * dx + dy * dy;
+  const float minDistance = carRadius + obstacleRadius;
+  if (distanceSq >= minDistance * minDistance) {
+    return false;
+  }
+
+  if (distanceSq <= 0.0001f) {
+    dx = 1.0f;
+    dy = 0.0f;
+    distanceSq = 1.0f;
+  }
+
+  const float distance = std::sqrt(distanceSq);
+  const float push = minDistance - distance;
+  *x += (dx / distance) * push;
+  *y += (dy / distance) * push;
+  return true;
+}
+
+inline bool ResolveCircleVsRect(float* x, float* y, float carRadius,
+                                const CityObstacle& obstacle) {
+  const float closestX = std::clamp(*x, obstacle.x, obstacle.x + obstacle.width);
+  const float closestY = std::clamp(*y, obstacle.y, obstacle.y + obstacle.height);
+  float dx = *x - closestX;
+  float dy = *y - closestY;
+  float distanceSq = dx * dx + dy * dy;
+  if (distanceSq >= carRadius * carRadius && distanceSq > 0.0001f) {
+    return false;
+  }
+
+  if (distanceSq <= 0.0001f) {
+    const float left = std::fabs(*x - obstacle.x);
+    const float right = std::fabs((obstacle.x + obstacle.width) - *x);
+    const float top = std::fabs(*y - obstacle.y);
+    const float bottom = std::fabs((obstacle.y + obstacle.height) - *y);
+    const float nearest = std::min(std::min(left, right), std::min(top, bottom));
+    if (nearest == left) {
+      *x = obstacle.x - carRadius;
+    } else if (nearest == right) {
+      *x = obstacle.x + obstacle.width + carRadius;
+    } else if (nearest == top) {
+      *y = obstacle.y - carRadius;
+    } else {
+      *y = obstacle.y + obstacle.height + carRadius;
+    }
+    return true;
+  }
+
+  const float distance = std::sqrt(distanceSq);
+  const float push = carRadius - distance;
+  *x += (dx / distance) * push;
+  *y += (dy / distance) * push;
+  return true;
+}
+
+inline bool ResolveCityObstacleCollisions(GameState* game, const CityMap& city) {
+  bool hit = false;
+  for (const CityObstacle& obstacle : city.obstacles) {
+    const bool resolved =
+        obstacle.circle
+            ? ResolveCircleVsCircle(&game->carPosition.x, &game->carPosition.y,
+                                    kGameCarCollisionRadius, obstacle)
+            : ResolveCircleVsRect(&game->carPosition.x, &game->carPosition.y,
+                                  kGameCarCollisionRadius, obstacle);
+    hit = hit || resolved;
+  }
+  return hit;
 }
 
 inline float ComputeSteeringSpeedFactor(float carSpeed) {
@@ -261,12 +474,13 @@ inline bool IsNearlyStopped(float carSpeed) {
 }
 
 inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons, float dt,
-                       bool collectHardcodedCoins = true) {
+                       CityMap* city = nullptr) {
   if (dt <= 0.0f) {
     return;
   }
 
   const float clampedSteering = ClampUnit(steeringInput);
+  game->visualWheelTurnDeg = clampedSteering * kGameMaxVisualWheelTurnDeg;
   if (game->driveMode == DriveMode::kAuto) {
     const float speedBlend = std::min(dt * 4.0f, 1.0f);
     game->carSpeed += (kGameAutoSpeed - game->carSpeed) * speedBlend;
@@ -318,15 +532,41 @@ inline void UpdateGame(GameState* game, float steeringInput, GameButtons buttons
       clampedSteering * steeringDirectionFromTravel * kGameMaxTurnRateDegPerSecond * speedFactor *
       lowSpeedYawFactor * dt;
 
+  if (HasCityGameplay(city)) {
+    game->onRoad = IsCarOnCityRoad(*city, *game);
+    if (!game->onRoad) {
+      if (game->carSpeed > kGameOffroadMaxSpeed) {
+        game->carSpeed = std::max(kGameOffroadMaxSpeed, game->carSpeed - kGameOffroadDrag * dt);
+      } else if (game->carSpeed < -kGameOffroadMaxSpeed) {
+        game->carSpeed = std::min(-kGameOffroadMaxSpeed, game->carSpeed + kGameOffroadDrag * dt);
+      }
+    }
+  } else {
+    game->onRoad = true;
+  }
+
   const float headingRad = game->carHeadingDeg * kGameDegToRad;
   game->carPosition.x += std::sin(headingRad) * game->carSpeed * dt;
   game->carPosition.y -= std::cos(headingRad) * game->carSpeed * dt;
-  game->carPosition.x =
-      std::clamp(game->carPosition.x, kGameCarMargin, kGameMapSize - kGameCarMargin);
-  game->carPosition.y =
-      std::clamp(game->carPosition.y, kGameCarMargin, kGameMapSize - kGameCarMargin);
 
-  if (collectHardcodedCoins) {
+  if (HasCityGameplay(city)) {
+    game->carPosition.x =
+        std::clamp(game->carPosition.x, kGameCarMargin, CityMapWidth(*city) - kGameCarMargin);
+    game->carPosition.y =
+        std::clamp(game->carPosition.y, kGameCarMargin, CityMapHeight(*city) - kGameCarMargin);
+    game->hitObstacle = ResolveCityObstacleCollisions(game, *city);
+    if (game->hitObstacle) {
+      game->carSpeed *= -0.18f;
+    }
+    game->onRoad = IsCarOnCityRoad(*city, *game);
+    CollectNearbyCityCoins(game, city);
+    UpdateCityCoinAnimations(city, dt);
+  } else {
+    game->carPosition.x =
+        std::clamp(game->carPosition.x, kGameCarMargin, kGameMapSize - kGameCarMargin);
+    game->carPosition.y =
+        std::clamp(game->carPosition.y, kGameCarMargin, kGameMapSize - kGameCarMargin);
+    game->hitObstacle = false;
     CollectNearbyCoins(game);
   }
 }

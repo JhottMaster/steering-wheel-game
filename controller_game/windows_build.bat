@@ -21,6 +21,16 @@ if not exist "%MINGW_BIN%\mingw32-make.exe" (
 
 set "PATH=%MINGW_BIN%;%USR_BIN%;%PATH%"
 
+%SystemRoot%\System32\tasklist.exe /FI "IMAGENAME eq steering_wheel_game.exe" 2>NUL | %SystemRoot%\System32\find.exe /I "steering_wheel_game.exe" >NUL
+if not errorlevel 1 (
+    echo Stopping existing steering wheel game process...
+    %SystemRoot%\System32\taskkill.exe /F /IM steering_wheel_game.exe >NUL
+    if errorlevel 1 (
+        echo Failed to stop the existing game process.
+        exit /b 1
+    )
+)
+
 echo Building steering wheel controller game...
 "%MINGW_BIN%\mingw32-make.exe" -f Makefile.windows buildonly
 

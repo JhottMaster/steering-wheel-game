@@ -32,7 +32,7 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 - drives a toy car around a spreadsheet-authored toy-carpet city map
 - uses generated sprites from `assets/sprites`
 - draws roads, buildings, trees, bushes, coins, and spawn markers from `assets/cities/demo_city.csv`
-- currently treats CSV coins and props as visual-only; collision, road/off-road logic, CSV-driven coin collection, and CSV-driven spawn are planned next steps
+- uses the CSV city data for spawn position, coin pickup, road/off-road behavior, and obstacle collision
 - renders a steering wheel from quaternion-derived twist around the selected sensor axis
 - displays the latest quaternion, derived Euler readout, and two button states from the controller
 - shows `button2` as the red left lamp and `button1` as the green right lamp in test mode
@@ -42,17 +42,24 @@ qw=0.996,qx=0.012,qy=-0.084,qz=0.018,button1=0,button2=1
 ## Controls
 
 - `T`: toggle Road Carpet Drive / hardware test dashboard
-- `1`: toggle auto-drive / button-throttle mode in the game
-- in button-throttle mode, `button1` / `W` accelerates
-- in button-throttle mode, `button2` / `S` brakes to a stop first and only engages reverse after the car has remained stopped for about `1` second
+- `A`: toggle auto-drive / button-throttle mode in the game
+- in button-throttle mode, `button1` / up arrow accelerates
+- in button-throttle mode, `button2` / down arrow brakes to a stop first and only engages reverse after the car has remained stopped for about `1` second
 - `P`: use the sensor pitch-axis twist for steering
 - `R`: use the sensor roll-axis twist for debug comparison
 - `Y`: use the sensor yaw-axis twist for debug comparison
 - `SPACE`: set the current sensor orientation as center
 - controller recenter gesture: hold green (`button1`) and press red (`button2`) `3` times within `1.5` seconds
-- `A` / `D` or left / right arrows: keyboard steering fallback input
-- `W` / up arrow: keyboard acceleration fallback in button-throttle mode
-- `S` / down arrow: keyboard brake fallback in button-throttle mode
+- left / right arrows: keyboard steering fallback input that automatically returns to center when released
+- up arrow: desktop accelerate input in button-throttle mode
+- down arrow: desktop brake/reverse input in button-throttle mode
+- `-` / `=`: zoom the game camera out / in while tuning the city
+- `0`: reset the game camera zoom
+- `E`: toggle road art editor mode for tuning one hard-coded road piece and showing collision outlines
+- in road art editor mode, `` ` `` / `~` toggles whether up/down selects the asset type or value field
+- in road art editor field selection, up/down selects `scale_percent`, `footprint_percent`, `offset_x`, `offset_y`, `anchor_x`, or `anchor_y`
+- in road art editor asset selection, up/down selects the road piece to tune
+- in road art editor mode, left/right adjusts the selected value by `1` and auto-saves the config
 - `F11`: toggle fullscreen on desktop builds
 - `ESC`: quit
 
@@ -84,8 +91,8 @@ The carpet background is tiled from `terrain_carpet_tilemirror.png`; roads, prop
 Fixed sprite filenames are used so the art can be replaced later without changing map files:
 
 - `terrain_carpet_tilemirror.png`
-- `road_horizontal.png`
-- `road_vertical.png`
+- `road_horizontal_repeat.png`
+- `road_vertical_repeat.png`
 - `road_intersection_4way_crosswalks.png`
 - `road_curve_bottom_right.png`
 - `road_curve_bottom_left.png`
@@ -95,6 +102,9 @@ Fixed sprite filenames are used so the art can be replaced later without changin
 - `sports_car_top.png`
 - building sprites such as `building_house.png`, `building_shop.png`, and `building_fire_station.png`
 - prop sprites such as `prop_bush_cluster.png`, `prop_evergreen.png`, and `prop_tree_round_ai_01.png`
+
+Road curve filenames should match their semantic direction. For example, `road_curve_bottom_left.png`
+is the art used by `CitySprite::kRoadCurveBottomLeft` and the `r_bl` city token.
 
 Sound assets are also generated original files:
 
@@ -130,7 +140,7 @@ token@x:y*scale
 token|token@x:y|token
 ```
 
-Offsets are local tile pixels. The current tile size is `512`, so `@256:256` means the center of a tile. If an object has no offset, the parser places it at the tile center.
+Offsets are local tile pixels in a `512 x 512` authoring coordinate space, so `@256:256` means the center of a tile. The game currently renders each authored tile as `256 x 256` world pixels, which keeps the spreadsheet readable while making the city more compact. If an object has no offset, the parser places it at the tile center.
 
 Current road tokens:
 
@@ -156,7 +166,27 @@ Current object tokens:
 - `fire_station`
 - `library`
 
-The parser for this format is in `src/game/city_map.h`. For now, these map entries drive visuals only. Gameplay collision and collection should use the same parsed city data later rather than pixel-matching alpha channels.
+The parser for this format is in `src/game/city_map.h`. The same parsed city data drives rendering and gameplay:
+
+- road tokens create drivable road shapes
+- coin tokens create collectible coins
+- `spawn:player` sets the starting car position
+- trees, bushes, and buildings create approximate obstacle collision shapes
+
+Collision is intentionally based on authored geometry, not sprite alpha pixels. That keeps gameplay stable even as art is resized, feathered, or replaced.
+
+Road art placement is tuned separately from road collision. Per-piece visual scale,
+footprint scale, `X/Y` offsets, anchor edges, and draw mode live in
+`assets/config/road_art_tuning.csv`, so straight roads, each curve direction, and intersections can
+be nudged independently while the CSV tokens and collision shapes stay stable. `scale_percent`
+shrinks or grows the art within its drawing box; `footprint_percent` shrinks or grows that drawing
+box relative to the authored tile and can go above `100` when a sprite, such as the 4-way
+intersection, needs to draw outside its logical collision tile. Anchor values are stepped positions:
+`-1`, `0`, and `1` mean top/left, center, and bottom/right, while values beyond that intentionally
+push the drawing box farther outside the logical tile. The in-game road art editor toggled by `E` can edit any configured road
+sprite, auto-saves this config as values change, and overlays the current gameplay collision
+geometry. Cyan outlines are drivable road shapes from the CSV tokens, orange outlines are obstacle
+collision shapes, and the pale circle is the car collision radius.
 
 ## Build And Run
 

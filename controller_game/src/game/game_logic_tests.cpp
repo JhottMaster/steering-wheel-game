@@ -84,6 +84,55 @@ void TestCoinCollection() {
   assert(game.score == 1);
 }
 
+void TestCitySpawnAndCoinCollection() {
+  CityMap city;
+  city.columns = 4;
+  city.rows = 4;
+  city.hasPlayerSpawn = true;
+  city.playerSpawnX = 300.0f;
+  city.playerSpawnY = 400.0f;
+  city.coins.push_back(CityCoin{300.0f, 400.0f, false, 0.0f});
+
+  GameState game;
+  InitializeGameFromCity(&game, &city);
+  assert(game.carPosition.x == 300.0f);
+  assert(game.carPosition.y == 400.0f);
+  UpdateGame(&game, 0.0f, {}, 0.01f, &city);
+  assert(city.coins[0].collected);
+  assert(city.coins[0].collectAnimationSeconds > 0.0f);
+  assert(game.score == 1);
+}
+
+void TestCityRoadDetection() {
+  CityMap city;
+  city.columns = 2;
+  city.rows = 2;
+  city.roads.push_back(CityRoadTile{CityRoadKind::kHorizontal, 0, 0});
+  const float center = kCityTileSize * 0.5f;
+  assert(IsPointOnCityRoad(city, GameVec2{center, center}));
+  assert(!IsPointOnCityRoad(city, GameVec2{center, 8.0f}));
+}
+
+void TestCityObstaclePushesCar() {
+  CityMap city;
+  city.columns = 2;
+  city.rows = 2;
+  const float center = kCityTileSize * 0.5f;
+  const float obstacleSize = kCityTileSize * 0.35f;
+  city.obstacles.push_back(
+      CityObstacle{center - obstacleSize * 0.5f, center - obstacleSize * 0.5f,
+                   obstacleSize, obstacleSize, false});
+
+  GameState game;
+  game.carPosition = GameVec2{center, center};
+  game.carSpeed = 0.0f;
+  UpdateGame(&game, 0.0f, {}, 0.01f, &city);
+  assert(game.hitObstacle);
+  assert(!PointInRect(game.carPosition.x, game.carPosition.y,
+                      center - obstacleSize * 0.5f, center - obstacleSize * 0.5f,
+                      obstacleSize, obstacleSize));
+}
+
 void TestSteeringSpeedFactorDropsAtSpeed() {
   assert(ComputeSteeringSpeedFactor(0.0f) > ComputeSteeringSpeedFactor(kGameMaxSpeed));
   assert(ComputeSteeringSpeedFactor(kGameMaxSpeed) >= 0.70f);
@@ -113,6 +162,9 @@ int main() {
   TestManualBrakeStopsBeforeReverse();
   TestDriveModeToggle();
   TestCoinCollection();
+  TestCitySpawnAndCoinCollection();
+  TestCityRoadDetection();
+  TestCityObstaclePushesCar();
   TestSteeringSpeedFactorDropsAtSpeed();
   TestLowSpeedYawFactorNearZeroWhenStopped();
   TestReverseSteeringTurnsOppositeDirection();

@@ -16,6 +16,7 @@ struct GameAssets {
   Texture2D roadCurveTopRight = {};
   Texture2D roadCurveTopLeft = {};
   Texture2D car = {};
+  Texture2D carTire = {};
   Texture2D coin = {};
   Texture2D treeRound = {};
   Texture2D treeEvergreen = {};
@@ -58,6 +59,10 @@ inline std::string FindCityPath(const char* filename) {
   return FindAssetPath("assets/cities", filename);
 }
 
+inline std::string FindConfigPath(const char* filename) {
+  return FindAssetPath("assets/config", filename);
+}
+
 inline Texture2D LoadSpriteTexture(const char* filename, int filter = TEXTURE_FILTER_BILINEAR) {
   Texture2D texture = LoadTexture(FindSpritePath(filename).c_str());
   if (TextureLoaded(texture)) {
@@ -70,15 +75,17 @@ inline Texture2D LoadSpriteTexture(const char* filename, int filter = TEXTURE_FI
 inline GameAssets LoadGameAssets() {
   GameAssets assets;
   assets.terrain = game_assets_detail::LoadSpriteTexture("terrain_carpet_tilemirror.png");
-  assets.roadHorizontal = game_assets_detail::LoadSpriteTexture("road_horizontal.png");
-  assets.roadVertical = game_assets_detail::LoadSpriteTexture("road_vertical.png");
+  assets.roadHorizontal = game_assets_detail::LoadSpriteTexture("road_horizontal_repeat.png");
+  assets.roadVertical = game_assets_detail::LoadSpriteTexture("road_vertical_repeat.png");
   assets.roadIntersection =
       game_assets_detail::LoadSpriteTexture("road_intersection_4way_crosswalks.png");
-  assets.roadCurveBottomRight = game_assets_detail::LoadSpriteTexture("road_curve_bottom_right.png");
+  assets.roadCurveBottomRight =
+      game_assets_detail::LoadSpriteTexture("road_curve_bottom_right.png");
   assets.roadCurveBottomLeft = game_assets_detail::LoadSpriteTexture("road_curve_bottom_left.png");
   assets.roadCurveTopRight = game_assets_detail::LoadSpriteTexture("road_curve_top_right.png");
   assets.roadCurveTopLeft = game_assets_detail::LoadSpriteTexture("road_curve_top_left.png");
-  assets.car = game_assets_detail::LoadSpriteTexture("sports_car_top.png");
+  assets.car = game_assets_detail::LoadSpriteTexture("toy_sports_car.png");
+  assets.carTire = game_assets_detail::LoadSpriteTexture("toy_car_tire.png");
   assets.coin = game_assets_detail::LoadSpriteTexture("coin_star.png");
   assets.treeRound = game_assets_detail::LoadSpriteTexture("prop_tree_round_ai_01.png");
   assets.treeEvergreen = game_assets_detail::LoadSpriteTexture("prop_evergreen.png");
@@ -150,6 +157,7 @@ inline void UnloadGameAssets(GameAssets* assets) {
   UnloadIfLoaded(&assets->roadCurveTopRight);
   UnloadIfLoaded(&assets->roadCurveTopLeft);
   UnloadIfLoaded(&assets->car);
+  UnloadIfLoaded(&assets->carTire);
   UnloadIfLoaded(&assets->coin);
   UnloadIfLoaded(&assets->treeRound);
   UnloadIfLoaded(&assets->treeEvergreen);
