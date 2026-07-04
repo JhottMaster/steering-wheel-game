@@ -12,6 +12,7 @@
 #endif
 
 #include "app/app_mode.h"
+#include "app/center_confirm.h"
 #include "app/controller_buttons.h"
 #include "app/pause_menu.h"
 #include "app/performance_log.h"
@@ -25,6 +26,7 @@
 #include "input/sensor_receiver.h"
 #include "input/steering_input.h"
 #include "raylib.h"
+#include "views/center_confirm_view.h"
 #include "views/hardware_test_view.h"
 #include "views/pause_menu_view.h"
 
@@ -56,6 +58,7 @@ struct AppRuntime {
   RecenterGestureState recenterGesture;
   float cameraZoomScale = 1.0f;
   PauseMenuState pauseMenu;
+  CenterConfirmState centerConfirm;
   bool shouldQuit = false;
   PerformanceWindow performance;
 };
@@ -239,9 +242,21 @@ int main() {
     const float pauseMenuSteeringAngleDeg =
         hasAnyPacket ? app.steeringInput.accumulatedGameAngleDeg * kGameSteeringDirection
                      : app.steeringInput.manualAngleDeg;
+    const bool centerConfirmWasActive = app.centerConfirm.active;
+    const CenterConfirmAction centerConfirmAction =
+        UpdateCenterConfirm(&app.centerConfirm, menuButtons.green, menuButtons.red);
+    if (centerConfirmAction == CenterConfirmAction::kConfirm) {
+      ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
+      CloseCenterConfirm(&app.centerConfirm);
+    } else if (centerConfirmAction == CenterConfirmAction::kCancel) {
+      CloseCenterConfirm(&app.centerConfirm);
+    }
+
     const PauseMenuAction pauseMenuAction =
-        UpdatePauseMenu(&app.pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
-                        menuButtons.red, dt);
+        centerConfirmWasActive
+            ? PauseMenuAction::kNone
+            : UpdatePauseMenu(&app.pauseMenu, pauseMenuSteeringAngleDeg, menuButtons.green,
+                              menuButtons.red, dt);
 
     switch (pauseMenuAction) {
       case PauseMenuAction::kResume:
@@ -253,7 +268,7 @@ int main() {
         ClosePauseMenu(&app.pauseMenu);
         break;
       case PauseMenuAction::kCenter:
-        ResetControllerCenter(app.lastGoodFrame, hasAnyPacket, &app.steeringInput);
+        OpenCenterConfirm(&app.centerConfirm, menuButtons.green, menuButtons.red);
         break;
       case PauseMenuAction::kQuit:
         app.shouldQuit = true;
@@ -329,8 +344,13 @@ int main() {
                hasFreshPackets, hasAnyPacket, app.discovery.wasBroadcastingForLoss, screenWidth,
                screenHeight, app.cameraZoomScale);
       if (app.pauseMenu.active) {
-        DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
-                      screenWidth, screenHeight);
+        if (app.centerConfirm.active) {
+          DrawCenterConfirm(app.centerConfirm, steeringAngleDeg, hasFreshPackets, screenWidth,
+                            screenHeight);
+        } else {
+          DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
+                        screenWidth, screenHeight);
+        }
       }
       EndDrawing();
       const auto frameEndTime = PerfClock::now();
@@ -348,8 +368,13 @@ int main() {
                      steeringAngleDeg, normalizedValue, menuButtons, hasFreshPackets,
                      hasAnyPacket, udpReady, localIpText, screenWidth, screenHeight);
     if (app.pauseMenu.active) {
-      DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
-                    screenWidth, screenHeight);
+      if (app.centerConfirm.active) {
+        DrawCenterConfirm(app.centerConfirm, steeringAngleDeg, hasFreshPackets, screenWidth,
+                          screenHeight);
+      } else {
+        DrawPauseMenu(app.pauseMenu, app.game, app.appMode, localIpText, app.cameraZoomScale,
+                      screenWidth, screenHeight);
+      }
     }
 
     EndDrawing();

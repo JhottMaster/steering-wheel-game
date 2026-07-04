@@ -1,5 +1,6 @@
 #include "game_logic.h"
 #include "road_art_tuning.h"
+#include "../app/center_confirm.h"
 #include "../app/pause_menu.h"
 #include "../app/server_discovery.h"
 #include "../input/datagram_receive.h"
@@ -160,6 +161,19 @@ void TestPauseChordOpensMenu() {
   assert(UpdatePauseMenu(&menu, 0.0f, true, true, kPauseChordHoldSeconds * 0.6f) ==
          PauseMenuAction::kNone);
   assert(menu.active);
+}
+
+void TestCenterConfirmButtonEdges() {
+  CenterConfirmState centerConfirm;
+  OpenCenterConfirm(&centerConfirm, true, false);
+  assert(centerConfirm.active);
+  assert(UpdateCenterConfirm(&centerConfirm, true, false) == CenterConfirmAction::kNone);
+  assert(UpdateCenterConfirm(&centerConfirm, false, false) == CenterConfirmAction::kNone);
+  assert(UpdateCenterConfirm(&centerConfirm, true, false) == CenterConfirmAction::kConfirm);
+
+  CloseCenterConfirm(&centerConfirm);
+  OpenCenterConfirm(&centerConfirm, false, false);
+  assert(UpdateCenterConfirm(&centerConfirm, false, true) == CenterConfirmAction::kCancel);
 }
 
 void TestServerDiscoveryBeacon() {
@@ -485,6 +499,7 @@ int main() {
   TestKeyboardSteeringFallback();
   TestPauseMenuSteeringAndButtons();
   TestPauseChordOpensMenu();
+  TestCenterConfirmButtonEdges();
   TestServerDiscoveryBeacon();
   TestRecenterGestureRequiresGreenAndThreeRedPresses();
   TestRecenterGestureCancelsOnGreenRelease();

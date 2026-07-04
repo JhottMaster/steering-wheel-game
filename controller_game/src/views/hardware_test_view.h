@@ -13,12 +13,12 @@
 #include "../app/controller_buttons.h"
 #include "../game/game_logic.h"
 #include "raylib.h"
+#include "steering_wheel_2d.h"
 
 using DisplayAxis = OrientationAxis;
 
 namespace hardware_test_view_detail {
 constexpr int kUdpPort = 4210;
-constexpr float kDegToRad = 0.017453292519943295769f;
 
 inline const char* GetAxisLabel(DisplayAxis axis) {
   switch (axis) {
@@ -31,37 +31,6 @@ inline const char* GetAxisLabel(DisplayAxis axis) {
   }
 
   return "pitch axis";
-}
-
-inline Vector2 PointOnCircle(Vector2 center, float radius, float angleDeg) {
-  const float radians = angleDeg * kDegToRad;
-  return Vector2{center.x + std::cos(radians) * radius,
-                 center.y + std::sin(radians) * radius};
-}
-
-inline void DrawSteeringWheel(Vector2 center, float radius, float rotationDeg) {
-  const Color rimColor = Color{46, 72, 88, 255};
-  const Color spokeColor = Color{77, 92, 103, 255};
-  const Color accentColor = Color{184, 72, 49, 255};
-  const Color shadowColor = Color{214, 209, 196, 255};
-  const Color hubColor = Color{242, 239, 228, 255};
-
-  DrawCircleV(Vector2{center.x + 5.0f, center.y + 7.0f}, radius + 6.0f, shadowColor);
-  DrawRing(center, radius * 0.76f, radius, 0.0f, 360.0f, 96, rimColor);
-  DrawRing(center, radius * 0.56f, radius * 0.62f, 0.0f, 360.0f, 96,
-           Color{204, 211, 214, 255});
-
-  for (int i = 0; i < 3; ++i) {
-    const float spokeAngleDeg = rotationDeg - 90.0f + static_cast<float>(i) * 120.0f;
-    DrawLineEx(PointOnCircle(center, radius * 0.20f, spokeAngleDeg),
-               PointOnCircle(center, radius * 0.70f, spokeAngleDeg), radius * 0.09f,
-               spokeColor);
-  }
-
-  DrawCircleV(center, radius * 0.24f, rimColor);
-  DrawCircleV(center, radius * 0.14f, hubColor);
-  DrawCircleV(PointOnCircle(center, radius * 0.87f, rotationDeg - 90.0f), radius * 0.075f,
-              accentColor);
 }
 
 inline void DrawButtonLamp(Vector2 center, float radius, bool pressed, Color dimColor,
@@ -125,7 +94,7 @@ inline void DrawHardwareTest(const SensorFrame& lastGoodFrame, DisplayAxis displ
                           wheelPanel.y + wheelPanel.height * 0.52f};
   const float wheelRadius = std::clamp(std::min(wheelPanel.width, wheelPanel.height) * 0.32f,
                                        135.0f, 270.0f);
-  hardware_test_view_detail::DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
+  steering_wheel_2d::DrawSteeringWheel(center, wheelRadius, steeringAngleDeg);
   hardware_test_view_detail::DrawButtonLamp(Vector2{center.x - wheelRadius * 1.34f, center.y},
                                             wheelRadius * 0.16f, buttons.red,
                                             Color{92, 35, 34, 255},
