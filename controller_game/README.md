@@ -145,6 +145,17 @@ python tools/generate_assets.py
 
 Some art helper scripts live in `tools/`, including tile mirroring and road alpha processing.
 
+For quick city-layout tweaks without launching the game, there is also a lightweight visual CSV
+editor:
+
+```text
+python tools/city_csv_editor.py
+```
+
+It shows the town as a clickable grid, includes row/column plus world-position data for each tile,
+shows sprite previews behind the labels when available, and lets you edit/save the raw
+pipe-separated cell contents directly.
+
 ## City CSV Format
 
 The city map uses a spreadsheet-friendly CSV where each row is map `Y`, each column is map `X`, and each cell contains a pipe-separated list of things to draw in that tile.

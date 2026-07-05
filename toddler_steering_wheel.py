@@ -541,7 +541,7 @@ battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z
 steering_wheel_back = steering_wheel_back.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
 # Battery management system board container
-bms_container_bottom = make_spanning_tray(11.5, 12.5, 1, tray_width=35, tray_thickness=2, depth=22)
+bms_container_bottom = make_spanning_tray(11.5, 12.5, 1, tray_width=35, tray_thickness=2, depth=20)
 button_wire_channel = cq.Workplane("XY").circle(5).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((24, 9.5, 8))
 bms_container_bottom = bms_container_bottom.cut(button_wire_channel)
 #show_debug(button_wire_channel)
@@ -557,6 +557,29 @@ steering_wheel_back = add_slot(
     rail_height=20,
     clearance=charge_board_slot_clearance,
 )
+
+# Front-half BMS retainer
+# This adds a simple inward boss on the cylindrical wall so the front half can
+# brace the back side of the BMS area when the shell is assembled.
+bms_front_retainer = make_spanning_tray(
+    -3,
+    20.5,
+    18.75,
+    tray_width=5,
+    tray_thickness=18,
+    depth=12,
+)
+bms_front_retainer2 = make_spanning_tray(
+    15,
+    20,
+    18.75,
+    tray_width=5,
+    tray_thickness=18,
+    depth=12,
+)
+bms_retainers = bms_front_retainer.union(bms_front_retainer2)
+# show_debug(bms_retainers, name="bms_retainers")
+steering_wheel_front = steering_wheel_front.union(bms_retainers)
 
 # Battery Charging port
 steering_wheel_back = cut_rectangular_port(steering_wheel_back, charge_port_width - 1, charge_port_height * .75, 6, 16.5, -10, port_cut_depth + 1)
@@ -677,8 +700,8 @@ steering_wheel_back = steering_wheel_back.intersect(cutting_tool)
 # -----------------------------
 # Preview and export
 # -----------------------------
-offset_center_hub = -wheel_outer_diameter + 40
-offset_wheel_front = wheel_outer_diameter + 10
+offset_center_hub = 0 # -wheel_outer_diameter + 40
+offset_wheel_front = 0 # wheel_outer_diameter + 10
 try:
     show_object(center_hub.translate((offset_center_hub, 0, 0)), name="center_hub")
     show_object(steering_wheel_back, name="steering_wheel_back")
