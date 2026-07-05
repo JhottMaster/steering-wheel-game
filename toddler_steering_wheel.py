@@ -478,7 +478,7 @@ led_lead_hole_depth = 5.0
 
 led_light_cutout = (
     cq.Workplane("XY")
-    .circle(5 / 2.0)
+    .circle(7 / 2.0)
     .extrude(10)
     .translate((led_socket_center_x, led_socket_center_y, 20))
 )
