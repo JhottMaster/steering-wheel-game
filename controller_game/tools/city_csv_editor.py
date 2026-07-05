@@ -8,9 +8,11 @@ from tkinter import messagebox
 
 try:
     from PIL import Image, ImageTk
+    from PIL import ImageDraw
 except ImportError:
     Image = None
     ImageTk = None
+    ImageDraw = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,6 +93,14 @@ def sprite_filename_for_cell(cell: str) -> str | None:
     for name in names:
         if name in road_map:
             return road_map[name]
+    return None
+
+
+def road_token_for_cell(cell: str) -> str | None:
+    for token in cell_tokens(cell):
+        name = token_name(token)
+        if name in {"r_h", "r_v", "r_x", "r_br", "r_bl", "r_tr", "r_tl"}:
+            return name
     return None
 
 
@@ -360,6 +370,15 @@ class CityEditorApp:
     def get_cell_sprite(self, cell: str):
         if Image is None or ImageTk is None:
             return None
+        road_token = road_token_for_cell(cell)
+        if road_token:
+            cache_key = f"road:{cell}"
+            if cache_key in self.sprite_cache:
+                return self.sprite_cache[cache_key]
+            photo = self.make_road_preview(cell, road_token)
+            self.sprite_cache[cache_key] = photo
+            return photo
+
         filename = sprite_filename_for_cell(cell)
         if not filename:
             return None
@@ -375,6 +394,64 @@ class CityEditorApp:
         photo = ImageTk.PhotoImage(image)
         self.sprite_cache[filename] = photo
         return photo
+
+    def make_road_preview(self, cell: str, road_token: str):
+        size = CELL_SIZE - 16
+        image = Image.new("RGBA", (size, size), (68, 142, 134, 255))
+        draw = ImageDraw.Draw(image)
+
+        road_fill = (78, 86, 96, 255)
+        lane_fill = (210, 218, 226, 255)
+        road_width = int(size * 0.36)
+        cx = size // 2
+        cy = size // 2
+        half = road_width // 2
+
+        def draw_horizontal():
+            draw.rounded_rectangle((0, cy - half, size, cy + half), radius=half // 2, fill=road_fill)
+            draw.rounded_rectangle((0, cy - 3, size, cy + 3), radius=3, fill=lane_fill)
+
+        def draw_vertical():
+            draw.rounded_rectangle((cx - half, 0, cx + half, size), radius=half // 2, fill=road_fill)
+            draw.rounded_rectangle((cx - 3, 0, cx + 3, size), radius=3, fill=lane_fill)
+
+        def draw_curve(corner_x: int, corner_y: int, start_deg: int, end_deg: int):
+            outer = [corner_x - road_width, corner_y - road_width, corner_x + road_width, corner_y + road_width]
+            inner_margin = int(road_width * 0.42)
+            inner = [
+                outer[0] + inner_margin,
+                outer[1] + inner_margin,
+                outer[2] - inner_margin,
+                outer[3] - inner_margin,
+            ]
+            draw.pieslice(outer, start=start_deg, end=end_deg, fill=road_fill)
+            draw.pieslice(inner, start=start_deg, end=end_deg, fill=(68, 142, 134, 255))
+
+        if road_token == "r_h":
+            draw_horizontal()
+        elif road_token == "r_v":
+            draw_vertical()
+        elif road_token == "r_x":
+            draw_horizontal()
+            draw_vertical()
+        elif road_token == "r_br":
+            draw_curve(size, size, 180, 270)
+        elif road_token == "r_bl":
+            draw_curve(0, size, 270, 360)
+        elif road_token == "r_tr":
+            draw_curve(size, 0, 90, 180)
+        elif road_token == "r_tl":
+            draw_curve(0, 0, 0, 90)
+
+        names = [token_name(token) for token in cell_tokens(cell)]
+        if "coin:star" in names:
+            draw.ellipse((size - 20, 4, size - 4, 20), fill=(255, 214, 10, 255), outline=(176, 128, 0, 255))
+        if "spawn:player" in names:
+            draw.ellipse((4, 4, 20, 20), fill=(69, 123, 157, 255), outline=(29, 53, 87, 255))
+        if any(name.startswith("kraken:") for name in names):
+            draw.ellipse((4, size - 20, 20, size - 4), fill=(181, 23, 158, 255), outline=(86, 11, 173, 255))
+
+        return ImageTk.PhotoImage(image)
 
     def get_editor_value(self) -> str:
         return self.editor.get("1.0", tk.END).strip()
