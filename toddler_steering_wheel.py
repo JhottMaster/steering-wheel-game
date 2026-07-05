@@ -257,7 +257,7 @@ def show_debug(object, name="debug_obj"):
 def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 10):
     """Create a stepped vertical screw/inset cutout starting at z_start."""
     inset_diameter = 4.5
-    inset_height = 5.0
+    inset_height = 8.0
 
     screw_channel_diameter = 4
     screw_head_diameter = 6.5
@@ -307,17 +307,36 @@ def make_screw_hole(x, y, z_start, full_screw_length, screw_head_extra_depth = 1
     return hole
 
 
-def make_half_ellipse_profile(half_width, height, segments=16):
+def make_half_ellipse_profile(
+    half_width,
+    height,
+    segments=32,
+    flat_top_ratio=0.85,
+):
+    """Create a rounded wire-channel profile with a shallow flat top."""
+    if half_width <= 0 or height <= 0:
+        raise ValueError("half_width and height must be positive")
+    if segments < 3:
+        raise ValueError("segments must be at least 3")
+    if not 0 < flat_top_ratio < 1:
+        raise ValueError("flat_top_ratio must be between 0 and 1")
+
     points = []
+    top_cut_z = height * flat_top_ratio
+    start_angle = math.pi - math.asin(flat_top_ratio)
+    end_angle = (2.0 * math.pi) + math.asin(flat_top_ratio)
+    z_scale = height / (height + top_cut_z)
 
     for i in range(segments + 1):
-        t = math.pi - (math.pi * i / segments)
+        t = start_angle + ((end_angle - start_angle) * i / segments)
         y = math.cos(t) * half_width
-        z = -math.sin(t) * height
+        raw_z = math.sin(t) * height
+        # Shift the clipped top to z=0, then scale so the bottom remains at -height.
+        z = (raw_z - top_cut_z) * z_scale
         points.append((y, z))
 
     profile = cq.Workplane("YZ").polyline(points)
-    profile = profile.lineTo(-half_width, 0).close()
+    profile = profile.lineTo(points[0][0], points[0][1]).close()
     return profile
 
 # -----------------------------
@@ -373,7 +392,8 @@ for i in range(spoke_count):
     wiring_spoke = (
         make_half_ellipse_profile(
             half_width=4.0,
-            height=5.0,   # taller than half_width = half oval
+            height=6.0,
+            flat_top_ratio=0.95,
         )
         .extrude(spoke_length * 3)
         .translate((0, 0, 11))
@@ -413,9 +433,9 @@ screw_length = 12
 
 for i in range(screw_count):
     angle = i * (360.0 / screw_count)
-    screw = make_screw_hole(spoke_center_offset + 25, 0, -12.5, screw_length).rotate((0, 0, 0), (1, 0, 0), 180).rotate((0, 0, 0), (0, 0, 1), angle - 45)
+    screw = make_screw_hole(spoke_center_offset + 25, 0, -15.5, screw_length).rotate((0, 0, 0), (1, 0, 0), 180).rotate((0, 0, 0), (0, 0, 1), angle - 45)
     result = result.cut(screw)
-    #show_debug(screw)
+    # show_debug(screw)
     
 # -----------------------------
 # Split hub electronics cavity
@@ -521,7 +541,7 @@ battery_container_rail_short = make_rail(-15, 26, -6, size_x=2, size_y=6, size_z
 steering_wheel_back = steering_wheel_back.union(battery_container_top).union(battery_container_bottom).union(battery_container_rail_long).union(battery_container_rail_short)
 
 # Battery management system board container
-bms_container_bottom = make_spanning_tray(11.5, 12.5, 1, tray_width=35, tray_thickness=2, depth=20)
+bms_container_bottom = make_spanning_tray(11.5, 12.5, 1, tray_width=35, tray_thickness=2, depth=22)
 button_wire_channel = cq.Workplane("XY").circle(5).extrude(4).rotate((1, 0, 0), (0,0,0), 90).translate((24, 9.5, 8))
 bms_container_bottom = bms_container_bottom.cut(button_wire_channel)
 #show_debug(button_wire_channel)
