@@ -369,6 +369,7 @@ for i in range(spoke_count):
     )
     spokes = spokes.union(spoke)
 
+    # tunnels for button wires
     wiring_spoke = (
         make_half_ellipse_profile(
             half_width=4.0,
@@ -457,13 +458,14 @@ led_lead_hole_depth = 5.0
 
 led_light_cutout = (
     cq.Workplane("XY")
-    .circle((led_socket_inner_diameter / 2.0) * .5)
+    .circle(5 / 2.0)
     .extrude(10)
     .translate((led_socket_center_x, led_socket_center_y, 20))
 )
 # show_debug(led_light_cutout, name="led_light_cutout")
 steering_wheel_front = steering_wheel_front.cut(led_light_cutout)
 
+# Created the hole on top of steering wheen for front LED.
 led_socket_outer = (
     cq.Workplane("XY")
     .circle(led_socket_outer_diameter / 2.0)
