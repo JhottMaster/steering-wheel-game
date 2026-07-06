@@ -2,6 +2,8 @@
 .local-appdata/
 .local-cache/
 .local-config/
+__pycache__/
+*.py[cod]
 firmware/xiao_bno055_udp_sender/wifi_secrets.h
 controller_game/build/
 controller_game/raspberry_pi_config.bat

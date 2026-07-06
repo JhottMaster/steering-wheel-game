@@ -21,6 +21,8 @@ TILE_WORLD_SIZE = 256
 CELL_SIZE = 84
 PADDING = 48
 SPRITES = ROOT / "assets" / "sprites"
+GROUND_FILL = "#448e86"
+GROUND_OUTLINE = "#2d6a65"
 
 if Image is not None:
     try:
@@ -132,7 +134,7 @@ def describe_cell(cell: str) -> CellStyle:
     if has_prop:
         return CellStyle("#95d5b2", "#2d6a4f", "PROP")
     if not names:
-        return CellStyle("#f8f9fa", "#adb5bd", "")
+        return CellStyle(GROUND_FILL, GROUND_OUTLINE, "")
     return CellStyle("#e9ecef", "#6c757d", "OBJ")
 
 
@@ -328,18 +330,6 @@ class CityEditorApp:
                 fill="#343a40",
             )
         lines = first_label_lines(cell)
-        if lines:
-            text_box_top = y0 + CELL_SIZE * 0.45 - 10
-            text_box_bottom = text_box_top + 10 + len(lines) * 14
-            self.canvas.create_rectangle(
-                x0 + 8,
-                text_box_top,
-                x1 - 8,
-                text_box_bottom,
-                fill="#ffffff",
-                outline="",
-                stipple="gray25",
-            )
         for index, line in enumerate(lines):
             self.canvas.create_text(
                 x0 + CELL_SIZE * 0.5,
@@ -347,7 +337,7 @@ class CityEditorApp:
                 text=line,
                 anchor="center",
                 font=("Segoe UI", 9),
-                fill="#212529",
+                fill="#111111",
             )
 
     def on_canvas_click(self, event: tk.Event) -> None:
